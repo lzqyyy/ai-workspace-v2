@@ -2,7 +2,8 @@
 
 - 状态：DONE
 - 主责 Agent：COORD
-- 完成时间：2026-11-10
+- 分支 / 提交：main / 88ae550（代码提交）
+完成时间：2026-11-10
 
 ## 完成内容
 - OpenAPI 3.1、Protobuf 6 RPC、SSE envelope/事件、统一错误码。

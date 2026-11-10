@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package aiworkspace.v1;
+
+option go_package = "ai-workspace-v2/worker/gen/aiworkspace/v1;aiworkspacev1";
+option java_multiple_files = true;
+option java_package = "com.aiworkspace.v1";
+
+// Contract version: 1.0.0
+// C++ owns all persistence. Workers receive only leased execution context.
+
+service JobService {
+  rpc ClaimNextJob(ClaimNextJobRequest) returns (ClaimNextJobResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc UpdateJobStatus(UpdateJobStatusRequest) returns (UpdateJobStatusResponse);
+}
+
+service ContextService {
+  rpc GetExecutionContext(GetExecutionContextRequest) returns (GetExecutionContextResponse);
+}
+
+service RunEventService {
+  rpc AppendEvent(AppendEventRequest) returns (AppendEventResponse);
+}
+
+service PermissionService {
+  rpc CheckPermission(CheckPermissionRequest) returns (CheckPermissionResponse);
+}
+
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_QUEUED = 1;
+  JOB_STATUS_RUNNING = 2;
+  JOB_STATUS_SUCCEEDED = 3;
+  JOB_STATUS_FAILED = 4;
+  JOB_STATUS_CANCELLED = 5;
+}
+
+enum RunStatus {
+  RUN_STATUS_UNSPECIFIED = 0;
+  RUN_STATUS_QUEUED = 1;
+  RUN_STATUS_RUNNING = 2;
+  RUN_STATUS_SUCCEEDED = 3;
+  RUN_STATUS_FAILED = 4;
+  RUN_STATUS_CANCELLED = 5;
+}
+
+enum ResourceType {
+  RESOURCE_TYPE_UNSPECIFIED = 0;
+  RESOURCE_TYPE_AGENT = 1;
+  RESOURCE_TYPE_CONVERSATION = 2;
+  RESOURCE_TYPE_RUN = 3;
+}
+
+message RequestMeta {
+  string request_id = 1;
+  string trace_id = 2;
+}
+
+message JobLease {
+  string job_id = 1;
+  string run_id = 2;
+  string worker_id = 3;
+  string lease_token = 4;
+  int64 lease_expires_at_unix_ms = 5;
+  int32 attempt = 6;
+  int32 max_attempts = 7;
+  JobStatus status = 8;
+}
+
+message ClaimNextJobRequest {
+  RequestMeta meta = 1;
+  string worker_id = 2;
+  int32 available_slots = 3;
+}
+
+message ClaimNextJobResponse {
+  bool job_available = 1;
+  JobLease job = 2;
+  int64 poll_after_ms = 3;
+}
+
+message HeartbeatRequest {
+  RequestMeta meta = 1;
+  string job_id = 2;
+  string run_id = 3;
+  string lease_token = 4;
+  int32 lease_seconds = 5;
+}
+
+message HeartbeatResponse {
+  bool lease_valid = 1;
+  bool cancel_requested = 2;
+  JobStatus job_status = 3;
+  int64 lease_expires_at_unix_ms = 4;
+}
+
+message UpdateJobStatusRequest {
+  RequestMeta meta = 1;
+  string job_id = 2;
+  string run_id = 3;
+  string lease_token = 4;
+  JobStatus status = 5;
+  string error_code = 6;
+  string error_message = 7;
+  string final_content = 8;
+  string usage_json = 9;
+}
+
+message UpdateJobStatusResponse {
+  bool accepted = 1;
+  bool duplicate = 2;
+  RunStatus run_status = 3;
+  int64 final_event_seq = 4;
+}
+
+message GetExecutionContextRequest {
+  RequestMeta meta = 1;
+  string job_id = 2;
+  string run_id = 3;
+  string lease_token = 4;
+}
+
+message ConversationMessage {
+  string message_id = 1;
+  string role = 2;
+  string sender_type = 3;
+  string content = 4;
+  int64 seq = 5;
+}
+
+message GetExecutionContextResponse {
+  string run_id = 1;
+  string job_id = 2;
+  string agent_id = 3;
+  string conversation_id = 4;
+  string system_prompt = 5;
+  string provider_type = 6;
+  string model_name = 7;
+  string base_url = 8;
+  string secret_ref = 9;
+  repeated ConversationMessage messages = 10;
+  int64 next_event_seq = 11;
+  int64 lease_expires_at_unix_ms = 12;
+}
+
+message AppendEventRequest {
+  RequestMeta meta = 1;
+  string job_id = 2;
+  string run_id = 3;
+  string lease_token = 4;
+  int64 event_seq = 5;
+  string event_type = 6;
+  string payload_json = 7;
+}
+
+message AppendEventResponse {
+  bool accepted = 1;
+  bool duplicate = 2;
+  int64 stored_seq = 3;
+  int64 next_seq = 4;
+}
+
+message CheckPermissionRequest {
+  RequestMeta meta = 1;
+  string actor_user_id = 2;
+  ResourceType resource_type = 3;
+  string resource_id = 4;
+  string action = 5;
+}
+
+message CheckPermissionResponse {
+  bool allowed = 1;
+  string reason = 2;
+}

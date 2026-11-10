@@ -1,0 +1,73 @@
+name: ai-workspace-v2
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-workspace}
+      POSTGRES_USER: ${POSTGRES_USER:-workspace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-workspace_dev_password}
+    volumes:
+      - workspace_pgdata:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  core:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    environment:
+      DATABASE_URL: host=postgres port=5432 dbname=${POSTGRES_DB:-workspace} user=${POSTGRES_USER:-workspace} password=${POSTGRES_PASSWORD:-workspace_dev_password}
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8080
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: 50051
+      FRONTEND_DIR: /app/frontend
+      MIGRATIONS_DIR: /app/migrations
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:8080}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ports:
+      - "8080:8080"
+    expose: ["50051"]
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs: ["/tmp"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/v1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: worker/Dockerfile
+    environment:
+      GRPC_ADDR: core:50051
+      WORKER_ID: worker-1
+      MOCK_DELAY_MS: ${MOCK_DELAY_MS:-250}
+      MODEL_TIMEOUT_MS: ${MODEL_TIMEOUT_MS:-120000}
+      HEARTBEAT_INTERVAL_MS: 2000
+      # MODEL_API_KEY: set this here or, preferably, inject it from a secret store.
+    networks: [internal]
+    depends_on:
+      core:
+        condition: service_healthy
+    read_only: true
+    tmpfs: ["/tmp"]
+    restart: unless-stopped
+
+networks:
+  internal:
+    internal: false
+
+volumes:
+  workspace_pgdata:

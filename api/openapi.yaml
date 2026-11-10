@@ -1,0 +1,464 @@
+openapi: 3.1.0
+info:
+  title: AI Workspace V2.0 Core API
+  version: 1.0.0
+  description: |
+    Frozen REST contract between the native browser client and the C++ core.
+    All API requests are same-origin and authenticated by an HttpOnly session cookie.
+    Mutating requests must include `X-Request-ID`; EventSource passes `request_id` as a query parameter.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: Auth
+  - name: Agents
+  - name: Conversations
+  - name: Runs
+  - name: Health
+paths:
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Start a same-origin session
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username, password]
+              properties:
+                username: { type: string, minLength: 1, maxLength: 80 }
+                password: { type: string, minLength: 8, maxLength: 200 }
+            example:
+              username: demo
+              password: demo123
+      responses:
+        '200':
+          description: Authenticated
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: HttpOnly SameSite=Lax session cookie
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the current session
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '204': { description: Session revoked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/me:
+    get:
+      tags: [Auth]
+      operationId: getMe
+      summary: Get the current user
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/agents:
+    get:
+      tags: [Agents]
+      operationId: listAgents
+      summary: List only the current user's agents
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Owned agents
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Agent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Agents]
+      operationId: createAgent
+      summary: Create an agent owned by the current user
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAgentRequest' }
+      responses:
+        '201':
+          description: Agent created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Agent' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/conversations:
+    get:
+      tags: [Conversations]
+      operationId: listConversations
+      summary: List only the current user's conversations
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Owned conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Conversation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Conversations]
+      operationId: createConversation
+      summary: Create a conversation using an owned agent
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [agent_id]
+              properties:
+                agent_id: { type: string, format: uuid }
+                title: { type: string, maxLength: 200 }
+      responses:
+        '201':
+          description: Conversation created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conversation' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/conversations/{conversation_id}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+    get:
+      tags: [Conversations]
+      operationId: listMessages
+      summary: Read stable, ordered conversation history
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: after_seq
+          in: query
+          schema: { type: integer, format: int64, minimum: 0 }
+      responses:
+        '200':
+          description: Message history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Message' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Conversations]
+      operationId: sendMessage
+      summary: Atomically create a user message, run, and queued job
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, minLength: 8, maxLength: 100 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [content]
+              properties:
+                content: { type: string, minLength: 1, maxLength: 32000 }
+                client_request_id: { type: string, minLength: 8, maxLength: 100 }
+      responses:
+        '202':
+          description: Run queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SendMessageResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/runs/{run_id}/events:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Runs]
+      operationId: streamRunEvents
+      summary: Subscribe to persisted run events with Last-Event-ID replay
+      parameters:
+        - name: request_id
+          in: query
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 100 }
+        - name: Last-Event-ID
+          in: header
+          schema: { type: string }
+        - name: after
+          in: query
+          schema: { type: integer, format: int64, minimum: 0 }
+      responses:
+        '200':
+          description: SSE stream; event schema is documented in docs/contracts/sse-events.md
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-cache }
+            X-Accel-Buffering:
+              schema: { type: string, const: 'no' }
+          content:
+            text/event-stream:
+              schema: { type: string }
+              example: |
+                retry: 2000
+                id: 1
+                event: run.started
+                data: {"schema_version":"1.0","run_id":"...","seq":1,"type":"run.started","payload":{}}
+
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/runs/{run_id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Runs]
+      operationId: cancelRun
+      summary: Request cancellation; queued runs cancel immediately
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Current run state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/runs/{run_id}/retry:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Runs]
+      operationId: retryRun
+      summary: Create a new run for the same user trigger after a terminal failure/cancel
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, minLength: 8, maxLength: 100 }
+      responses:
+        '202':
+          description: Retry queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SendMessageResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/health:
+    get:
+      tags: [Health]
+      operationId: health
+      summary: Dependency health without secrets
+      responses:
+        '200':
+          description: Healthy or degraded status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, database]
+                properties:
+                  status: { type: string, enum: [ok, degraded] }
+                  database: { type: string, enum: [ok, unavailable] }
+                  version: { type: string, const: 1.0.0 }
+components:
+  parameters:
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 100 }
+    ConversationId:
+      name: conversation_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    User:
+      type: object
+      required: [id, username, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        display_name: { type: string }
+    LoginResponse:
+      type: object
+      required: [user]
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+    ModelProvider:
+      type: object
+      required: [id, name, provider_type, model_name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        provider_type: { type: string, examples: [mock, openai_compatible] }
+        model_name: { type: string }
+    Agent:
+      type: object
+      required: [id, name, system_prompt, model_provider, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        avatar: { type: [string, 'null'] }
+        system_prompt: { type: string }
+        model_provider: { $ref: '#/components/schemas/ModelProvider' }
+        status: { type: string, enum: [active, disabled] }
+        created_at: { type: string, format: date-time }
+    CreateAgentRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        avatar: { type: [string, 'null'], maxLength: 500000 }
+        system_prompt: { type: string, maxLength: 8000, default: '' }
+        model_provider_id: { type: string, format: uuid }
+    Conversation:
+      type: object
+      required: [id, agent_id, title, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        agent_id: { type: string, format: uuid }
+        agent_name: { type: string }
+        title: { type: string }
+        status: { type: string, enum: [active, archived] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Message:
+      type: object
+      required: [id, conversation_id, seq, sender_type, role, content, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        conversation_id: { type: string, format: uuid }
+        seq: { type: integer, format: int64 }
+        sender_type: { type: string, enum: [user, agent] }
+        sender_id: { type: [string, 'null'] }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        run_id: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [completed, failed, streaming] }
+        created_at: { type: string, format: date-time }
+    Run:
+      type: object
+      required: [id, conversation_id, status, cancel_requested, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        conversation_id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
+        cancel_requested: { type: boolean }
+        error_code: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        started_at: { type: [string, 'null'], format: date-time }
+        finished_at: { type: [string, 'null'], format: date-time }
+    SendMessageResponse:
+      type: object
+      required: [message, run_id, status, events_url, duplicate]
+      properties:
+        message: { $ref: '#/components/schemas/Message' }
+        run_id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running] }
+        events_url: { type: string }
+        duplicate: { type: boolean }
+    Error:
+      type: object
+      required: [code, message, request_id, retryable]
+      properties:
+        code:
+          type: string
+          enum: [AUTH_REQUIRED, AUTH_INVALID, VALIDATION_FAILED, FORBIDDEN, NOT_FOUND, CONFLICT, RUN_NOT_CANCELLABLE, JOB_LEASE_INVALID, MODEL_TIMEOUT, MODEL_PROVIDER_ERROR, RUN_CANCELLED, RATE_LIMITED, INTERNAL]
+        message: { type: string }
+        request_id: { type: string }
+        retryable: { type: boolean }
+        details: { type: object, additionalProperties: true }
+  responses:
+    ValidationError:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Authentication required or invalid
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Resource access denied
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: State or idempotency conflict
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InternalError:
+      description: Internal failure
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>AI Workspace · 基础对话</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app" class="app-shell" aria-live="polite">
+    <section id="auth-view" class="auth-view">
+      <div class="auth-art" aria-hidden="true">
+        <div class="orb orb-a"></div><div class="orb orb-b"></div>
+        <div class="auth-copy">
+          <span class="eyebrow">AI WORKSPACE V2.0</span>
+          <h1>让对话回到<br><em>可追踪的工作流</em></h1>
+          <p>C++ 核心负责权限与持久化，Go Worker 流式执行模型调用。每一次 Run 都有状态、事件和恢复路径。</p>
+          <div class="pipeline">
+            <span>Browser</span><i></i><span>C++</span><i></i><span>Worker</span><i></i><span>Model</span>
+          </div>
+        </div>
+      </div>
+      <div class="auth-panel">
+        <form id="login-form" class="login-card">
+          <div class="brand-mark">AW</div>
+          <div>
+            <p class="eyebrow">基础对话平台</p>
+            <h2>登录工作台</h2>
+            <p class="muted">使用本地演示账号开始纵向链路验收。</p>
+          </div>
+          <label>用户名<input id="username" name="username" autocomplete="username" value="demo" required></label>
+          <label>密码<input id="password" name="password" type="password" autocomplete="current-password" value="demo123" minlength="8" required></label>
+          <button id="login-button" class="button primary wide" type="submit">进入 Workspace</button>
+          <p id="login-error" class="form-error" role="alert"></p>
+          <p class="demo-hint">演示账号 <code>demo</code> / <code>demo123</code></p>
+        </form>
+      </div>
+    </section>
+
+    <section id="workspace-view" class="workspace-view hidden">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <div class="brand-row"><div class="brand-mark small">AW</div><div><strong>Workspace</strong><span>基础对话</span></div></div>
+          <button id="logout-button" class="icon-button" title="退出登录" aria-label="退出登录">↗</button>
+        </div>
+        <button id="new-conversation" class="button primary wide" type="button"><span>＋</span> 新建对话</button>
+        <div class="side-label"><span>会话</span><span id="conversation-count">0</span></div>
+        <nav id="conversation-list" class="conversation-list" aria-label="会话列表"></nav>
+        <div class="sidebar-bottom">
+          <label class="agent-picker">当前 Agent
+            <select id="agent-select" aria-label="选择 Agent"></select>
+          </label>
+          <button id="new-agent" class="button ghost wide" type="button">＋ 创建 Agent</button>
+          <div class="user-chip"><span id="user-avatar">D</span><div><strong id="user-name">Demo User</strong><small>本地会话</small></div></div>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <header class="chat-header">
+          <button id="sidebar-toggle" class="icon-button mobile-only" type="button" aria-label="打开会话列表">☰</button>
+          <div>
+            <p class="eyebrow">CONVERSATION</p>
+            <h2 id="conversation-title">选择一个会话</h2>
+            <p id="conversation-subtitle" class="muted">历史消息由 C++ 从 PostgreSQL 读取</p>
+          </div>
+          <div class="run-state" id="run-state"><span class="dot"></span><span id="run-state-text">空闲</span></div>
+        </header>
+
+        <section id="message-stage" class="message-stage">
+          <div id="empty-state" class="empty-state">
+            <div class="empty-symbol">◌</div>
+            <h3>从一条消息开始</h3>
+            <p>创建 Agent 与会话后，消息将通过 Run/Job 异步执行，并以 SSE 流式回传。</p>
+            <button id="empty-action" class="button primary" type="button">创建 Agent</button>
+          </div>
+          <div id="messages" class="messages"></div>
+        </section>
+
+        <footer class="composer-wrap">
+          <div id="inline-error" class="inline-error hidden" role="alert">
+            <span id="inline-error-text"></span>
+            <button id="retry-button" class="text-button hidden" type="button">重新运行</button>
+          </div>
+          <form id="message-form" class="composer">
+            <textarea id="message-input" rows="1" maxlength="32000" placeholder="输入消息，Enter 发送，Shift + Enter 换行" aria-label="消息内容" disabled></textarea>
+            <div class="composer-actions">
+              <span class="composer-hint">SSE 流式 · request_id 全链路追踪</span>
+              <div>
+                <button id="cancel-button" class="button danger hidden" type="button">取消运行</button>
+                <button id="send-button" class="button primary" type="submit" disabled>发送 <span>↗</span></button>
+              </div>
+            </div>
+          </form>
+        </footer>
+      </main>
+    </section>
+  </div>
+
+  <dialog id="agent-dialog" class="dialog">
+    <form id="agent-form" method="dialog">
+      <div class="dialog-head"><div><p class="eyebrow">AGENT REGISTRY</p><h2>创建 Agent</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭">×</button></div>
+      <label>名称<input id="agent-name" maxlength="80" placeholder="例如：产品研究助手" required></label>
+      <label>系统提示词<textarea id="agent-prompt" rows="5" maxlength="8000" placeholder="定义 Agent 的角色、语气和边界"></textarea></label>
+      <p id="agent-error" class="form-error" role="alert"></p>
+      <div class="dialog-actions"><button class="button ghost" value="cancel" type="button" data-close-dialog>取消</button><button id="agent-submit" class="button primary" value="default" type="submit">创建并选择</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

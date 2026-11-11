@@ -2,7 +2,7 @@
 
 - 状态：DONE
 - 主责 Agent：COORD / CORE
-- 分支 / 提交：main / 待本次修复提交
+- 分支 / 提交：main / 6df557c（Origin 修复提交）
 - 完成时间：2026-11-11
 
 ## 完成内容

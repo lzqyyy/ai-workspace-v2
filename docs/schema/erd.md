@@ -1,7 +1,7 @@
 # 数据库 ER 设计 V1.0.0
 
 - 数据库：PostgreSQL 16+
-- 迁移：`db/migrations/001_init.sql`、`002_seed.sql`
+- 迁移：`db/migrations/001_init.sql` 至 `004_demo_password.sql`
 - 唯一业务写入者：C++ Core
 - Worker 禁止连接 PostgreSQL
 

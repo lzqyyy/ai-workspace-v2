@@ -18,7 +18,7 @@
 
 ## 验证命令与结果
 ```text
-新空库启动 Core -> schema_migrations=3, users=2
+新空库启动 Core -> schema_migrations=4, users=2
 PASS
 ```
 

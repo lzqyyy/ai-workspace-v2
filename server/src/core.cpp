@@ -73,6 +73,7 @@ Json CoreService::login(const std::string& username, const std::string& password
 {
     require_text(username, "username", 80);
     require_text(password, "password", 200);
+    if (password.size() < 8) throw ServiceError(400, "VALIDATION_FAILED", "password must be at least 8 characters");
     auto s = db_.session();
     auto r = s.query("SELECT id::text,password_hash,display_name,status FROM users WHERE lower(username)=lower($1) LIMIT 1", {username});
     if (r.rows() != 1 || r.get(0, 3) != "active" || !verify_password(password, r.get(0, 1))) {

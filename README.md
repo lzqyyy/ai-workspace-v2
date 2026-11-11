@@ -21,7 +21,7 @@ Copy-Item .env.example .env
 docker compose --env-file .env -f deploy/docker-compose.yml up --build
 ```
 
-浏览器打开 `http://localhost:8080`。本地演示账号：`demo / demo123`。
+浏览器打开 `http://localhost:8080`。本地演示账号：`demo / demo1234`。
 
 无 Docker 的本地开发：
 

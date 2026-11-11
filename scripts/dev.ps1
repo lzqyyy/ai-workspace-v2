@@ -54,6 +54,6 @@ Write-Host 'Starting Go Worker.'
 $worker = Start-Process -FilePath $workerExe -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput (Join-Path $root 'build\worker.log') -RedirectStandardError (Join-Path $root 'build\worker.err') -PassThru
 $worker.Id | Set-Content (Join-Path $root 'build\worker.pid')
 Start-Sleep -Seconds 1
-Write-Host 'Workspace running at http://127.0.0.1:8080 (demo / demo123)'
+Write-Host 'Workspace running at http://127.0.0.1:8080 (demo / demo1234)'
 Write-Host 'Stop with ./scripts/stop-dev.ps1'
 if (!$NoBrowser) { Start-Process 'http://127.0.0.1:8080' }

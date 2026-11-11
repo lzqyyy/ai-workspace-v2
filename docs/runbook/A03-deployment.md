@@ -36,7 +36,7 @@ docker compose --env-file .env -f deploy/docker-compose.yml up --build -d
 docker compose --env-file .env -f deploy/docker-compose.yml ps
 ```
 
-打开 `http://localhost:8080`，演示账号 `demo / demo123`。
+打开 `http://localhost:8080`，演示账号 `demo / demo1234`。
 
 ## 4. 网络与安全边界
 

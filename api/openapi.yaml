@@ -36,7 +36,7 @@ paths:
                 password: { type: string, minLength: 8, maxLength: 200 }
             example:
               username: demo
-              password: demo123
+              password: demo1234
       responses:
         '200':
           description: Authenticated

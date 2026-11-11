@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string]$Message,
-    [string]$Branch = "main"
+    [string]$Branch = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,20 +21,34 @@ if ($LASTEXITCODE -ne 0 -or !$root) { throw "Not inside a Git repository." }
 Set-Location $root
 
 $currentBranch = (& git branch --show-current)
-if ($LASTEXITCODE -ne 0 -or $currentBranch -ne $Branch) {
-    throw "Auto-sync requires branch '$Branch'; current branch is '$currentBranch'."
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($currentBranch)) {
+    throw "Auto-sync does not run from a detached HEAD."
+}
+if ([string]::IsNullOrWhiteSpace($Branch)) { $Branch = $currentBranch }
+if ($Branch -ne $currentBranch) {
+    throw "Requested branch '$Branch' does not match current branch '$currentBranch'."
+}
+if ($Branch -ne "main" -and $Branch -notmatch '^agent/[a-z0-9._-]+/[a-z0-9._-]+$') {
+    throw "Unsanctioned branch '$Branch'. Use main or agent/<role>/<task-id>."
 }
 if (!(& git remote get-url origin 2>$null)) { throw "Git remote 'origin' is not configured." }
+
+& git ls-remote --exit-code --heads origin $Branch *> $null
+$remoteBranchExists = $LASTEXITCODE -eq 0
 
 Invoke-Git @("add", "-A")
 $staged = @(& git diff --cached --name-only)
 if ($LASTEXITCODE -ne 0) { throw "Unable to inspect staged files." }
 
 if ($staged.Count -eq 0) {
-    Invoke-Git @("fetch", "origin", $Branch)
-    $ahead = [int]((& git rev-list --count "origin/$Branch..HEAD").Trim())
-    if ($ahead -gt 0) {
-        Invoke-Git @("push", "origin", "HEAD:$Branch")
+    if ($remoteBranchExists) {
+        Invoke-Git @("fetch", "origin", $Branch)
+        $ahead = [int]((& git rev-list --count "origin/$Branch..HEAD").Trim())
+    } else {
+        $ahead = [int]((& git rev-list --count "origin/main..HEAD").Trim())
+    }
+    if ($ahead -gt 0 -or !$remoteBranchExists) {
+        Invoke-Git @("push", "-u", "origin", "HEAD:$Branch")
         $hash = (& git rev-parse --short HEAD).Trim()
         Write-Output "SYNCED_NO_COMMIT commit=$hash branch=$Branch remote=origin"
     } else {
@@ -81,11 +95,11 @@ foreach ($pattern in $secretPatterns) {
 }
 
 Invoke-Git @("commit", "-m", $Message)
-Invoke-Git @("fetch", "origin", $Branch)
-$behind = [int]((& git rev-list --count "HEAD..origin/$Branch").Trim())
-if ($behind -gt 0) {
-    Invoke-Git @("rebase", "origin/$Branch")
+if ($remoteBranchExists) {
+    Invoke-Git @("fetch", "origin", $Branch)
+    $behind = [int]((& git rev-list --count "HEAD..origin/$Branch").Trim())
+    if ($behind -gt 0) { Invoke-Git @("rebase", "origin/$Branch") }
 }
-Invoke-Git @("push", "origin", "HEAD:$Branch")
+Invoke-Git @("push", "-u", "origin", "HEAD:$Branch")
 $hash = (& git rev-parse --short HEAD).Trim()
 Write-Output "SYNCED commit=$hash branch=$Branch remote=origin"

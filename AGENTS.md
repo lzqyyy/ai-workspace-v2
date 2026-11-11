@@ -540,3 +540,19 @@ V2-D01 至 V2-D08 不在本轮协作范围。
 6. 再扩展 Project、Task、插件和个性化能力。
 
 任何 Agent 都不得为了提前展示功能而绕过契约、权限、数据库边界或交付门禁。
+
+## 19. GitHub 自动同步规则
+
+用户已对 `ai-workspace-v2` 仓库授予持续同步授权。任何任务只要修改了已跟踪的项目文件，Agent 在结束任务前必须使用项目 Skill：
+
+```text
+.agents/skills/github-auto-sync/SKILL.md
+```
+
+并执行：
+
+```powershell
+./.agents/skills/github-auto-sync/scripts/github-sync.ps1 -Message "<commit message>"
+```
+
+该授权不要求用户再次说“提交”或“推送”。若没有文件变化、测试失败、发现密钥、存在远端冲突或推送失败，则不得伪装为同步成功；需保留现场并向用户报告。

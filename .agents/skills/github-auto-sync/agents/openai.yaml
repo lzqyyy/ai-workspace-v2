@@ -1,0 +1,6 @@
+interface:
+  display_name: "GitHub Auto Sync"
+  short_description: "Validate, commit, and push every completed project change"
+  default_prompt: "Synchronize this repository after completing the requested change."
+policy:
+  allow_implicit_invocation: true

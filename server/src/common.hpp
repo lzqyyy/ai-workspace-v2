@@ -29,7 +29,7 @@ struct Config {
     int grpc_port{50051};
     std::string frontend_dir{"frontend"};
     std::string migrations_dir{"db/migrations"};
-    std::string app_origin{"http://localhost:8080"};
+    std::string app_origin{"http://localhost:8080,http://127.0.0.1:8080"};
     int session_ttl_seconds{604800};
     bool cookie_secure{false};
 

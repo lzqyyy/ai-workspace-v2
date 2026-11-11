@@ -28,7 +28,7 @@ services:
       GRPC_PORT: 50051
       FRONTEND_DIR: /app/frontend
       MIGRATIONS_DIR: /app/migrations
-      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:8080}
+      APP_ORIGIN: "${APP_ORIGIN:-http://localhost:8080,http://127.0.0.1:8080}"
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ports:
       - "8080:8080"

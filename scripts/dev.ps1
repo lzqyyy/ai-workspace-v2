@@ -38,7 +38,7 @@ if ($exists -ne '1') { & (Join-Path $bin 'createdb.exe') -h 127.0.0.1 -p 55432 -
 $env:DATABASE_URL = 'host=127.0.0.1 port=55432 dbname=workspace user=postgres'
 $env:HTTP_HOST = '127.0.0.1'; $env:HTTP_PORT = '8080'; $env:GRPC_HOST = '127.0.0.1'; $env:GRPC_PORT = '50051'
 $env:FRONTEND_DIR = Join-Path $root 'frontend'; $env:MIGRATIONS_DIR = Join-Path $root 'db\migrations'
-$env:APP_ORIGIN = 'http://127.0.0.1:8080'; $env:COOKIE_SECURE = 'false'
+$env:APP_ORIGIN = 'http://localhost:8080,http://127.0.0.1:8080'; $env:COOKIE_SECURE = 'false'
 if (!(Test-Port 8080)) {
     Write-Host 'Starting C++ Core on http://127.0.0.1:8080.'
     $server = Start-Process -FilePath $serverExe -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput (Join-Path $root 'build\server.log') -RedirectStandardError (Join-Path $root 'build\server.err') -PassThru

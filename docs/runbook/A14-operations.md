@@ -8,7 +8,7 @@
 | `HTTP_HOST/HTTP_PORT` | Core | 0.0.0.0/8080 | 唯一浏览器入口 |
 | `GRPC_HOST/GRPC_PORT` | Core | 0.0.0.0/50051 | 仅内部网络 |
 | `MIGRATIONS_DIR` | Core | db/migrations | 启动时幂等迁移 |
-| `APP_ORIGIN` | Core | http://localhost:8080 | CSRF Origin 校验 |
+| `APP_ORIGIN` | Core | localhost + 127.0.0.1:8080 | 逗号分隔的精确允许源，用于 CSRF Origin 校验 |
 | `COOKIE_SECURE` | Core | false | 生产 HTTPS 必须 true |
 | `GRPC_ADDR` | Worker | 127.0.0.1:50051 | Core gRPC 地址 |
 | `WORKER_ID` | Worker | 主机名-PID | 租约审计标识 |

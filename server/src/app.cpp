@@ -42,7 +42,11 @@ private:
     AuthSession authenticate(const HttpRequestPtr& req) { return service_.authenticate(req->getCookie("workspace_session")); }
     void enforce_origin(const HttpRequestPtr& req) {
         const auto& origin = req->getHeader("origin");
-        if (!origin.empty() && origin != config_.app_origin) throw ServiceError(403, "FORBIDDEN", "request origin is not allowed");
+        if (origin.empty()) return;
+        for (const auto& candidate : split(config_.app_origin, ',')) {
+            if (trim(candidate) == origin) return;
+        }
+        throw ServiceError(403, "FORBIDDEN", "request origin is not allowed");
     }
     template <typename F>
     void run_json(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>& cb, bool authenticated, F&& operation, int status = 200) {

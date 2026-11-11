@@ -35,7 +35,12 @@ class Client:
                     if envelope['type'] in TERMINAL:break
                     event_name='';event_data=''
         return events
-def login(client,username='demo',password='demo1234'):
+def login(client,username='demo',password='demo1234',origin=None):
+    headers={'Origin':origin} if origin else None
+    result=client.request('POST','/api/v1/auth/login',{'username':username,'password':password},headers=headers)
+    assert result['user']['username']==username
+    assert 'token' not in result,'session token must never be exposed'
+    return result['user']
     result=client.request('POST','/api/v1/auth/login',{'username':username,'password':password});assert result['user']['username']==username;assert 'token' not in result,'session token must never be exposed';return result['user']
 def send(client,conversation_id,content,request_id):
     return client.request('POST',f'/api/v1/conversations/{conversation_id}/messages',{'content':content,'client_request_id':request_id},{'Idempotency-Key':request_id},request_id)
@@ -48,7 +53,13 @@ def main():
         raise AssertionError('7-character demo password was accepted')
     except ApiFailure as error:
         assert error.status==400 and error.code=='VALIDATION_FAILED'
-    demo=Client();user=login(demo)
+    evil=Client()
+    try:
+        login(evil,origin='http://evil.example')
+        raise AssertionError('unlisted origin was accepted')
+    except ApiFailure as error:
+        assert error.status==403 and error.code=='FORBIDDEN'
+    demo=Client();user=login(demo,origin='http://localhost:8080')
     agent=demo.request('POST','/api/v1/agents',{'name':f'E2E Agent {uuid.uuid4().hex[:6]}','system_prompt':'Return a concise end-to-end response.'})
     conversation=demo.request('POST','/api/v1/conversations',{'agent_id':agent['id'],'title':'Automated E2E'});cid=conversation['id']
     first_request=f'e2e-send-{uuid.uuid4()}';sent=send(demo,cid,'请执行一次完整的端到端测试',first_request);assert sent['status'] in {'queued','running'};run_id=sent['run_id']
@@ -57,7 +68,7 @@ def main():
     duplicate=send(demo,cid,'请执行一次完整的端到端测试',first_request);assert duplicate['duplicate'] is True;assert duplicate['run_id']==run_id;assert len(demo.request('GET',f'/api/v1/conversations/{cid}/messages')['items'])==2
     job_id=events[0]['payload']['job_id'];helper=subprocess.run([str(HELPER),'-job',job_id,'-run',run_id],capture_output=True,text=True,timeout=30,check=False);assert helper.returncode==0,helper.stderr;callbacks=[json.loads(line) for line in helper.stdout.splitlines() if line.strip()];assert len(callbacks)==2 and all(item['duplicate'] and item['accepted'] for item in callbacks);assert len(demo.request('GET',f'/api/v1/conversations/{cid}/messages')['items'])==2
     replay=demo.events(run_id,after=1);assert replay and replay[0]['seq']==2 and replay[-1]['type']=='message.completed'
-    other=Client();login(other,'other','demo1234')
+    other=Client();login(other,'other','demo1234',origin='http://127.0.0.1:8080')
     try:
         other.request('GET',f'/api/v1/conversations/{cid}/messages');raise AssertionError('cross-user message read was allowed')
     except ApiFailure as error:assert error.status==403 and error.code=='FORBIDDEN'

@@ -4,7 +4,7 @@
 agent_contract:
   version: 1.1.0
   project: AI Workspace V2.0 · 基础对话平台
-  repository_root: D:\lzqy_\codex\Workspace\ai-workspace-v2
+  repository_root: git rev-parse --show-toplevel
   canonical_branch: main
   remote: origin
   current_release: v0.1.0

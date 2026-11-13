@@ -78,7 +78,11 @@ void Database::applyMigrations(const std::string& directory) const
         std::ifstream input(file, std::ios::binary);
         if (!input) throw ServiceError(500, "INTERNAL", "migration file is unreadable", true);
         const std::string sql((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-        session.exec_script(sql);
+        try {
+            session.exec_script(sql);
+        } catch (const ServiceError& e) {
+            throw ServiceError(e.http_status, e.code, std::string(e.what()) + ": " + file.filename().string(), e.retryable);
+        }
     }
 }
 bool Database::healthy() const

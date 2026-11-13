@@ -156,7 +156,7 @@ private:
 
 } // namespace
 
-void runGrpcServer(CoreService& service, const Config& config)
+void runGrpcServer(CoreService& service, const Config& config, std::function<void(std::shared_ptr<grpc::Server>)> on_started)
 {
     JobServiceImpl job(service);
     ContextServiceImpl context(service);
@@ -169,7 +169,8 @@ void runGrpcServer(CoreService& service, const Config& config)
     builder.RegisterService(&context);
     builder.RegisterService(&events);
     builder.RegisterService(&permission);
-    auto server = builder.BuildAndStart();
+    std::shared_ptr<grpc::Server> server = builder.BuildAndStart();
+    on_started(server);
     if (!server) {
         LOG_ERROR << "gRPC server failed to bind " << address;
         return;

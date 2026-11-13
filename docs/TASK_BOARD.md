@@ -30,13 +30,14 @@
 | PHASE2-20261113 阶段二边界与稳定性修补 | CORE/WEB/QA | DONE | 并发 send 幂等、取消优先于 lease 过期、未知字段/长度校验、状态契约、retry 防重复与恢复测试；构建/E2E/专项 PASS |
 | A00 AI 多 Agent 维护契约 | COORD | DONE | `AGENTS.md` V1.1、分支与单写者协议 |
 | A01 GitHub 自动同步 | COORD | DONE | `.agents/skills/github-auto-sync/` |
+| PHASE3-20261113 环境可移植性、生命周期与清理 | CORE/WORKER/QA | DONE | 阶段化启动日志、gRPC Shutdown/join、Docker-first 工具入口、路径清理；构建/E2E/lease/health PASS |
 
 ## Gate 结果
 
 - Gate 1 契约门禁：PASS
 - Gate 2 纵向链路门禁：PASS
 - Gate 3 安全与可靠性门禁：PASS
-- Gate 4 交付门禁：PASS（本机无 Docker，使用等价本地进程验证）
+- Gate 4 交付门禁：PASS（Docker-first 构建、E2E、lease 与 health 验证）
 
 ## L2 后续任务
 

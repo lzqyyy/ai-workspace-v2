@@ -2,8 +2,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $msys = Join-Path $root '.tools\msys64\usr\bin\bash.exe'
 $go = Join-Path $root '.tools\go\bin\go.exe'
-if (!(Test-Path -LiteralPath $msys)) { throw 'MSYS2 toolchain missing. Use Docker or follow docs/runbook/A14-operations.md.' }
-if (!(Test-Path -LiteralPath $go)) { throw 'Go toolchain missing under .tools/go.' }
+if (!(Test-Path -LiteralPath $msys)) { throw 'Local MSYS2 toolchain missing under .tools/. Use Docker-first: ./scripts/setup-dev.ps1 -Up; or prepare the no-Docker toolchain described in docs/runbook/A14-operations.md.' }
+if (!(Test-Path -LiteralPath $go)) { throw 'Local Go toolchain missing under .tools/go. Use Docker-first: ./scripts/setup-dev.ps1 -Up.' }
 Push-Location $root
 try {
     $env:GOPATH = Join-Path $root '.tools\gopath'

@@ -6,6 +6,9 @@ $bin = Join-Path $root '.tools\msys64\ucrt64\bin'
 $pgdata = Join-Path $root 'build\pgdata'
 $serverExe = Join-Path $root 'build\server\workspace_server.exe'
 $workerExe = Join-Path $root 'build\workspace-worker.exe'
+if (!(Test-Path -LiteralPath $bin)) {
+    throw 'Local PostgreSQL/toolchain missing under .tools/. Use Docker-first: ./scripts/setup-dev.ps1 -Up.'
+}
 
 function Test-Port([int]$Port) {
     $client = [System.Net.Sockets.TcpClient]::new()

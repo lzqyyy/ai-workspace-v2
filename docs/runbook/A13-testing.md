@@ -5,10 +5,11 @@
 | 层 | 命令 | 覆盖 |
 |---|---|---|
 | 契约 | `./scripts/test-contracts.ps1` | OpenAPI、6 RPC、SSE、错误码、Protobuf |
+| Docker 全量 | `./scripts/setup-dev.ps1 -Up` + `./scripts/test.ps1 -Docker` | 契约、Go test/vet、前端检查、E2E；不依赖宿主机 Python/protoc/Go |
 | C++ 构建 | `./scripts/build.ps1` | Drogon、libpq、OpenSSL、gRPC 链接 |
 | Worker 单元 | `go test ./worker/...` | Mock 流式、提示词、取消 |
 | 前端状态 | `node tests/frontend_state_test.js` | Retry 防重复、刷新恢复、SSE 游标与完成态 |
-| E2E | `python tests/e2e.py` | 登录、Agent、会话、发送、SSE、落库、幂等、取消、重试、越权 |
+| E2E | `./scripts/e2e.ps1` 或 `./scripts/e2e.ps1 -Docker` | 登录、Agent、会话、发送、SSE、落库、幂等、取消、重试、越权 |
 | Lease | `./scripts/test-lease.ps1` | 停止 Worker 后领取 queued Job，错误 lease 被拒绝 |
 | Health | `./scripts/test-health.ps1` | PostgreSQL 停机 503、恢复 200 |
 
@@ -32,12 +33,18 @@
 16. 登录、Agent、会话、消息请求拒绝未知字段；avatar、消息内容与 `client_request_id` 长度边界返回 400 `VALIDATION_FAILED`。
 17. send/retry 的 `status` 与 Run 状态枚举一致。
 
-## 3. 专项测试
+## 3. 工具探测与容器入口
+
+- 宿主脚本会探测 `PYTHON`/`python`/`python3`/`py -3`、`PROTOC`、`.tools/`、Go 与 Node；缺失时给出对应的可直接执行命令。
+- `test-contracts.ps1 -Docker` 在临时 Ubuntu 容器中安装 Python/PyYAML/protoc，不改宿主环境。
+- `test.ps1 -Docker` 依次执行契约、Go test/vet、前端检查和 E2E；E2E 通过 Compose 内部网络访问 `core:8080`，helper 使用 `GRPC_ADDR=core:50051`。
+
+## 4. 专项测试
 
 - `./scripts/test-lease.ps1`：停止 Worker，使用 gRPC 测试程序领取 queued Job，先以错误 lease 调 `UpdateJobStatus` 并断言 `JOB_LEASE_INVALID`，再用正确 lease 取消清理；随后领取另一 Job、通过 REST 请求取消并等待 lease 过期，断言终态为 `cancelled`、无 `MODEL_TIMEOUT` 且无 assistant 消息；最后恢复 Worker。
 - `./scripts/test-health.ps1`：在 Compose 环境中停/启 PostgreSQL，验证 `/api/v1/health` 的状态码和响应体。
 
-## 4. 手动验收
+## 5. 手动验收
 
 - 浏览器登录、创建 Agent、创建会话、发送消息，观察流式回复。
 - 运行中取消，页面显示已取消，不继续增长。
@@ -47,7 +54,7 @@
 - 浏览器级自动检查：登录、会话加载、提交消息、SSE 完成，且模型回复包含本次用户输入。
 - 截图证据：`docs/evidence/ui-login.png`、`ui-workspace.png`、`ui-completed.png`。
 
-## 5. 通过记录
+## 6. 通过记录
 
 ```text
 contract validation: PASS

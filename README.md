@@ -16,20 +16,32 @@ Browser -> Drogon HTTP/SSE :8080 -> PostgreSQL :5432
 
 ## 快速启动
 
+Docker-first：
+
+```powershell
+./scripts/setup-dev.ps1 -Up
+```
+
+脚本会从 `.env.example` 创建缺失的 `.env`、校验 Compose 配置、构建 Core/Worker 并等待健康检查。浏览器打开 `http://localhost:8080`。本地演示账号：`demo / demo1234`。
+
+直接使用 Compose：
+
 ```powershell
 Copy-Item .env.example .env
 docker compose --env-file .env -f deploy/docker-compose.yml up --build
 ```
 
-浏览器打开 `http://localhost:8080`。本地演示账号：`demo / demo1234`。
+## 验证
 
-无 Docker 的本地开发：
+Docker-first（Compose 服务已启动）：
 
 ```powershell
-./scripts/dev.ps1
+./scripts/test.ps1 -Docker
 ```
 
-## 验证
+该入口不要求宿主机安装 Python、protoc 或 Go。临时容器只用于测试，不进入 Git。
+
+可选的本机无 Docker 验证：
 
 ```powershell
 ./scripts/test-contracts.ps1
@@ -52,4 +64,4 @@ E2E 默认使用 Mock 模型，断言登录、Agent、会话、消息、SSE、�
 
 ## 本地工具链
 
-仓内 `.tools/` 仅用于本机验证且已被忽略。生产与 CI 使用 `deploy/` 中的固定版本镜像，不依赖宿主机全局安装。
+仓内 `.tools/` 仅用于可选的本机无 Docker 验证且已被忽略。仓库不提交工具链或下载缓存；默认使用 `./scripts/setup-dev.ps1 -Up` 和 `./scripts/test.ps1 -Docker`。生产与 CI 使用 `deploy/` 中的固定版本镜像，不依赖宿主机全局安装。

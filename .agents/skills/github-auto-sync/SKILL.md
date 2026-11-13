@@ -9,7 +9,7 @@ The user has granted standing authorization to synchronize this repository after
 
 ## Scope
 
-- Repository: `D:\lzqy_\codex\Workspace\ai-workspace-v2`
+- Repository: resolve at runtime with `git rev-parse --show-toplevel`; expected repository name is `ai-workspace-v2`.
 - Remote: `origin`
 - Sanctioned branches: `main` and `agent/<role>/<task-id>`
 - Apply only after tracked project files, configuration, contracts, migrations, tests, or documentation change.

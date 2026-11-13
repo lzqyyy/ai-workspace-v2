@@ -39,18 +39,27 @@ docker compose --env-file .env -f deploy/docker-compose.yml down
 - 已合并迁移禁止修改，只能新增下一编号迁移。
 - 回滚应用使用上一镜像版本；数据库破坏性回滚必须先新增 ADR。
 
-## 4. 本地无 Docker 开发
+## 4. Docker-first 本地开发
+
+```powershell
+./scripts/setup-dev.ps1 -Up
+./scripts/test.ps1 -Docker
+```
+
+`setup-dev.ps1` 从 `.env.example` 创建缺失的 `.env`、校验 Compose、构建并启动 Core/Worker，然后等待健康检查。`test.ps1 -Docker` 在临时容器中运行契约、Go test/vet、前端检查与 E2E，不要求宿主安装 Python、protoc 或 Go。E2E helper 通过 `GRPC_ADDR` 使用 Compose 内部地址。
+
+## 5. 可选的本机无 Docker 开发
 
 ```powershell
 ./scripts/build.ps1
 ./scripts/dev.ps1 -NoBrowser
-python tests/e2e.py
+./scripts/e2e.ps1
 ./scripts/stop-dev.ps1
 ```
 
-本地开发仅使用 `.tools/` 中的便携工具链，目录已被 Git 忽略。生产不依赖该目录。
+该路径使用被 Git 忽略的 `.tools/` 工具链；仓库不提交工具或下载缓存。缺少 `.tools/` 时脚本会明确报错并指向 Docker-first 入口。生产不依赖该目录。
 
-## 5. 健康检查
+## 6. 健康检查
 
 ```powershell
 curl.exe http://localhost:8080/api/v1/health
@@ -58,7 +67,7 @@ curl.exe http://localhost:8080/api/v1/health
 
 期望：`{"status":"ok","database":"ok","version":"1.0.0"}`，HTTP 200。数据库不可用时返回 HTTP 503 和 `{"status":"degraded","database":"unavailable","version":"1.0.0"}`；可用 `./scripts/test-health.ps1` 验证停库与恢复。
 
-## 6. 故障排查
+## 7. 故障排查
 
 | 现象 | 检查 |
 |---|---|
@@ -71,7 +80,7 @@ curl.exe http://localhost:8080/api/v1/health
 | 数据库不可用 | Compose Postgres 健康检查、DATABASE_URL、卷权限 |
 | C++ 启动失败 | `build/server.err` 或 Compose core 日志；检查迁移目录 |
 
-## 7. 生产注意
+## 8. 生产注意
 
 - 仅暴露 443，反向代理到 Core 8080。
 - 禁止发布 50051/5432。

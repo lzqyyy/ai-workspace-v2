@@ -42,7 +42,6 @@ def login(client,username='demo',password='demo1234',origin=None):
     assert result['user']['username']==username
     assert 'token' not in result,'session token must never be exposed'
     return result['user']
-    result=client.request('POST','/api/v1/auth/login',{'username':username,'password':password});assert result['user']['username']==username;assert 'token' not in result,'session token must never be exposed';return result['user']
 def send(client,conversation_id,content,request_id):
     return client.request('POST',f'/api/v1/conversations/{conversation_id}/messages',{'content':content,'client_request_id':request_id},{'Idempotency-Key':request_id},request_id)
 def expect_validation(client,method,path,body,headers=None):

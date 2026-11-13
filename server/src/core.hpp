@@ -33,7 +33,8 @@ public:
     Json listMessages(const std::string& user_id, const std::string& conversation_id, long long after_seq, const std::string& request_id);
     Json sendMessage(const std::string& user_id, const std::string& conversation_id, const Json& body,
                      const std::string& client_request_id, const std::string& request_id);
-    Json retryRun(const std::string& user_id, const std::string& run_id, const std::string& request_id);
+    Json retryRun(const std::string& user_id, const std::string& run_id, const std::string& idempotency_key,
+                  const std::string& request_id);
     Json cancelRun(const std::string& user_id, const std::string& run_id, const std::string& request_id);
     Json getRun(const std::string& user_id, const std::string& run_id);
     Json listRunEvents(const std::string& user_id, const std::string& run_id, long long after_seq);

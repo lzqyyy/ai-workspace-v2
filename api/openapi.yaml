@@ -288,10 +288,11 @@ paths:
         - name: Idempotency-Key
           in: header
           required: false
+          description: Repeating the same key for the same user returns the first retry run.
           schema: { type: string, minLength: 8, maxLength: 100 }
       responses:
         '202':
-          description: Retry queued
+          description: Retry queued or the original retry run returned
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SendMessageResponse' }
@@ -306,7 +307,7 @@ paths:
       summary: Dependency health without secrets
       responses:
         '200':
-          description: Healthy or degraded status
+          description: Core and database are healthy
           content:
             application/json:
               schema:
@@ -315,6 +316,17 @@ paths:
                 properties:
                   status: { type: string, enum: [ok, degraded] }
                   database: { type: string, enum: [ok, unavailable] }
+                  version: { type: string, const: 1.0.0 }
+        '503':
+          description: Database dependency is unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, database]
+                properties:
+                  status: { type: string, const: degraded }
+                  database: { type: string, const: unavailable }
                   version: { type: string, const: 1.0.0 }
 components:
   parameters:

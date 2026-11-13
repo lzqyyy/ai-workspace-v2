@@ -1,7 +1,7 @@
 # 数据库 ER 设计 V1.0.0
 
 - 数据库：PostgreSQL 16+
-- 迁移：`db/migrations/001_init.sql` 至 `004_demo_password.sql`
+- 迁移：`db/migrations/001_init.sql` 至 `005_retry_idempotency.sql`
 - 唯一业务写入者：C++ Core
 - Worker 禁止连接 PostgreSQL
 
@@ -23,6 +23,8 @@ erDiagram
     runs ||--o{ run_events : streams
     runs ||--o| messages : produces
     users ||--o{ audit_events : acts
+    users ||--o{ retry_idempotency : owns
+    runs ||--o{ retry_idempotency : retried_as
 ```
 
 ## 2. 不变量
@@ -31,6 +33,7 @@ erDiagram
 - 一个用户消息、Run、Job 在同一事务创建。
 - 每个 Run 恰好一个 Job；重试创建新 Run，不复用旧 Job。
 - 每个 Run 最多一条 assistant 最终消息，由 `ux_messages_assistant_run` 保证。
+- Retry Idempotency-Key 在用户范围内唯一；重复 key 返回首次创建的 Run。
 - `(run_id, seq)` 唯一；终态事件按 `run_id + event_type` 唯一。
 - `project_id` 本轮仅预留可空字段，不建立 Team/Project 功能。
 - 消息正文不进入审计；`audit_events.metadata_jsonb` 禁止放正文和密钥。

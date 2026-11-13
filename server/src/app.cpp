@@ -19,6 +19,12 @@ Json parse_body(const HttpRequestPtr& req) {
     if (!body.is_object()) throw ServiceError(400, "VALIDATION_FAILED", "request body must be an object");
     return body;
 }
+std::string idempotency_key(const HttpRequestPtr& req) {
+    auto value = req->getHeader("idempotency-key");
+    if (!value.empty() && (value.size() < 8 || value.size() > 100))
+        throw ServiceError(400, "VALIDATION_FAILED", "Idempotency-Key must be 8-100 characters");
+    return value;
+}
 HttpResponsePtr json_response(const Json& body, int status, const std::string& rid) {
     auto response = HttpResponse::newHttpResponse();
     response->setStatusCode(static_cast<HttpStatusCode>(status));
@@ -68,11 +74,13 @@ private:
 void Api::registerRoutes()
 {
     auto& app = drogon::app();
-    app.registerHandler("/api/v1/health", [this](const HttpRequestPtr&, std::function<void(const HttpResponsePtr&)>&& cb) {
+    app.registerHandler("/api/v1/health", [this](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
         Json result;
+        int status = 200;
         try { result = service_.health(); }
         catch (...) { result = {{"status", "degraded"}, {"database", "unavailable"}, {"version", "1.0.0"}}; }
-        cb(json_response(result, 200, "req-health"));
+        if (result.value("database", "") != "ok") status = 503;
+        cb(json_response(result, status, request_id_from(req->getHeader("x-request-id"))));
     }, {Get});
 
     app.registerHandler("/api/v1/auth/login", [this](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
@@ -80,7 +88,7 @@ void Api::registerRoutes()
         try {
             enforce_origin(req);
             auto body = parse_body(req);
-            auto result = service_.login(body.value("username", ""), body.value("password", ""), required_request_id(req));
+            auto result = service_.login(json_string(body, "username"), json_string(body, "password"), required_request_id(req));
             const std::string token = result.value("token", "");
             result.erase("token");
             auto response = json_response(result, 200, rid);
@@ -149,9 +157,9 @@ void Api::registerRoutes()
         } else {
             run_json(req, cb, true, [this, req, conversation_id](const AuthSession& s, const std::string& rid) {
                 enforce_origin(req);
-                std::string client_id = req->getHeader("idempotency-key");
+                std::string client_id = idempotency_key(req);
                 auto body = parse_body(req);
-                if (client_id.empty()) client_id = body.value("client_request_id", "");
+                if (client_id.empty()) client_id = json_string(body, "client_request_id");
                 return service_.sendMessage(s.user_id, conversation_id, body, client_id, rid);
             }, 202);
         }
@@ -182,7 +190,7 @@ void Api::registerRunRoutes()
     app.registerHandler("/api/v1/runs/{1}/retry", [this](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb, const std::string& runId) {
         const std::string run_id = runId;
         run_json(req, cb, true, [this, req, run_id](const AuthSession& s, const std::string& rid) {
-            enforce_origin(req); return service_.retryRun(s.user_id, run_id, rid);
+            enforce_origin(req); return service_.retryRun(s.user_id, run_id, idempotency_key(req), rid);
         }, 202);
     }, {Post});
 

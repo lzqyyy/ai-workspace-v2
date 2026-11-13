@@ -26,4 +26,5 @@
 - Worker 将 Provider 错误映射为上述错误码；C++ 只接受白名单错误码。
 - `request_id` 必须原样进入审计事件和错误响应。缺少请求 ID 的 API 调用按 `VALIDATION_FAILED` 处理。
 - 重试必须创建新的 `run_id`；同一用户消息的重复发送通过 `client_request_id` 幂等返回原 `run_id`。
+- Retry 使用 `Idempotency-Key`：同一用户重复使用同一 key 返回第一次创建的 retry `run_id`；不同 key 创建新的 Run。
 - 失败重试不得自动无限循环；Job 默认 `max_attempts=3`，仅可重试错误自动回收。

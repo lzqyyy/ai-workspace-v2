@@ -27,7 +27,8 @@ function formatTime(value){if(!value)return'';const date=new Date(value);if(Numb
 function setRunState(kind,text){els.runState.className=`run-state ${kind||''}`.trim();els.runStateText.textContent=text;}
 function setError(message,retryable=false){els.inlineErrorText.textContent=message||'';els.inlineError.classList.toggle('hidden',!message);els.retryButton.classList.toggle('hidden',!(retryable&&state.lastRunId));}
 function clearError(){setError('');}
-function setSending(busy){els.sendButton.disabled=busy||!state.activeConversation;els.messageInput.disabled=busy||!state.activeConversation;els.cancelButton.classList.toggle('hidden',!busy);}
+function activeRun(){return state.run&&state.run.conversationId===state.activeConversation?.id?state.run:null;}
+function setSending(busy){const locked=busy||Boolean(state.run);els.sendButton.disabled=locked||!state.activeConversation;els.messageInput.disabled=locked||!state.activeConversation;els.cancelButton.classList.toggle('hidden',!(busy&&activeRun()));}
 async function login(event){
   event.preventDefault();els.loginError.textContent='';els.loginButton.disabled=true;
   try{await api('/api/v1/auth/login',{method:'POST',body:JSON.stringify({username:$('username').value.trim(),password:$('password').value})});await bootstrap();}
@@ -52,11 +53,14 @@ function updateEmptyState(){
   const hasAgent=state.agents.length>0;els.emptyState.classList.remove('hidden');els.messages.classList.add('hidden');els.emptyState.querySelector('h3').textContent=hasAgent?'创建第一个会话':'先创建一个 Agent';els.emptyState.querySelector('p').textContent=hasAgent?'Agent 已就绪。创建会话后即可发送消息，并由 Worker 流式回复。':'Agent 绑定所有者与模型配置，是发起会话的前提。';els.emptyAction.textContent=hasAgent?'创建会话':'创建 Agent';els.messageInput.disabled=true;els.sendButton.disabled=true;
 }async function selectConversation(id){
   const conversation=state.conversations.find(item=>item.id===id);if(!conversation)return;
-  if(state.run&&state.run.conversationId!==id)closeRunStream();
-  state.activeConversation=conversation;renderConversations();els.emptyState.classList.add('hidden');els.messages.classList.remove('hidden');
-  els.conversationTitle.textContent=conversation.title;els.conversationSubtitle.textContent=`${conversation.agent_name} · 历史消息持久化于 PostgreSQL`;els.messageInput.disabled=false;els.sendButton.disabled=false;clearError();
-  try{const response=await api(`/api/v1/conversations/${encodeURIComponent(id)}/messages`);state.messages=response.items||[];renderMessages();}
-  catch(error){setError(error.message,error.retryable);}
+  if(state.activeConversation?.id!==id||state.eventSource)closeRunStream();
+  state.activeConversation=conversation;state.lastRunId=state.run?.conversationId===id?state.run.runId:null;renderConversations();els.emptyState.classList.add('hidden');els.messages.classList.remove('hidden');
+  els.conversationTitle.textContent=conversation.title;els.conversationSubtitle.textContent=`${conversation.agent_name} · 历史消息持久化于 PostgreSQL`;clearError();
+  try{const response=await api(`/api/v1/conversations/${encodeURIComponent(id)}/messages`);if(state.activeConversation?.id!==id)return;state.messages=response.items||[];renderMessages();}
+  catch(error){if(state.activeConversation?.id===id)setError(error.message,error.retryable);}
+  if(activeRun()){setRunState('active','正在恢复事件流');setSending(true);connectRun();}
+  else if(state.run){setRunState('active','另一会话运行中');setSending(false);}
+  else{setRunState('','空闲');setSending(false);}
 }
 function buildMessage(message,streaming=false){
   const article=document.createElement('article');article.className=`message ${message.sender_type||'agent'}${streaming?' streaming':''}`;
@@ -151,9 +155,11 @@ async function finishRun(kind,envelope){
   if(!state.run)return;const finishedRunId=state.run.runId;const conversationId=state.run.conversationId;
   if(state.eventSource){state.eventSource.close();state.eventSource=null;}
   state.run=null;state.lastRunId=finishedRunId;localStorage.removeItem('workspace.activeRun');setSending(false);
-  if(kind==='succeeded'){setRunState('success','已完成');clearError();}
-  if(kind==='failed'){const code=envelope.payload?.error_code||'MODEL_PROVIDER_ERROR';setRunState('error','运行失败');setError(`运行失败（${code}）。可以重新运行。`,true);}
-  if(kind==='cancelled'){setRunState('error','已取消');setError('运行已取消。可以重新运行。',true);}
+  if(state.activeConversation?.id===conversationId){
+    if(kind==='succeeded'){setRunState('success','已完成');clearError();}
+    if(kind==='failed'){const code=envelope.payload?.error_code||'MODEL_PROVIDER_ERROR';setRunState('error','运行失败');setError(`运行失败（${code}）。可以重新运行。`,true);}
+    if(kind==='cancelled'){setRunState('error','已取消');setError('运行已取消。可以重新运行。',true);}
+  }
   if(state.activeConversation?.id===conversationId){try{const response=await api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`);state.messages=response.items||[];renderMessages();}catch(error){setError(error.message,false);}}
   const conversation=state.conversations.find(item=>item.id===conversationId);if(conversation)conversation.updated_at=new Date().toISOString();renderConversations();
 }

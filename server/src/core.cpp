@@ -138,8 +138,8 @@ Json CoreService::listAgents(const std::string& user_id, const std::string&)
 
 Json CoreService::createAgent(const std::string& user_id, const Json& body, const std::string& request_id)
 {
-    const std::string name = body.value("name", "");
-    const std::string system_prompt = body.value("system_prompt", "");
+    const std::string name = json_string(body, "name");
+    const std::string system_prompt = json_string(body, "system_prompt");
     require_text(name, "name", 80);
     if (system_prompt.size() > 8000) throw ServiceError(400, "VALIDATION_FAILED", "system_prompt is too long");
     if (body.contains("avatar") && !body["avatar"].is_null() && !body["avatar"].is_string())
@@ -148,7 +148,7 @@ Json CoreService::createAgent(const std::string& user_id, const Json& body, cons
     auto s = db_.session();
     PgResult provider;
     if (body.contains("model_provider_id") && !body["model_provider_id"].is_null()) {
-        const std::string provider_id = body["model_provider_id"].get<std::string>();
+        const std::string provider_id = json_string(body, "model_provider_id");
         require_uuid(provider_id, "model_provider_id");
         provider = s.query("SELECT id::text FROM model_providers WHERE id=$1 AND enabled=true", {provider_id});
     } else {
@@ -191,9 +191,9 @@ Json CoreService::listConversations(const std::string& user_id, const std::strin
 
 Json CoreService::createConversation(const std::string& user_id, const Json& body, const std::string& request_id)
 {
-    const std::string agent_id = body.value("agent_id", "");
+    const std::string agent_id = json_string(body, "agent_id");
     require_uuid(agent_id, "agent_id");
-    std::string title = body.value("title", "");
+    std::string title = json_string(body, "title");
     if (trim(title).empty()) title = "New conversation";
     require_text(title, "title", 200);
     auto s = db_.session();
@@ -236,7 +236,7 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
                               const std::string& client_request_id, const std::string& request_id)
 {
     require_uuid(conversation_id, "conversation_id");
-    const std::string content = body.value("content", "");
+    const std::string content = json_string(body, "content");
     require_text(content, "content", 32000);
     if (client_request_id.size() > 100) throw ServiceError(400, "VALIDATION_FAILED", "client_request_id is too long");
     auto s = db_.session();
@@ -286,16 +286,44 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
         throw;
     }
 }
-Json CoreService::retryRun(const std::string& user_id, const std::string& run_id, const std::string& request_id)
+Json CoreService::retryRun(const std::string& user_id, const std::string& run_id,
+                            const std::string& idempotency_key, const std::string& request_id)
 {
     require_uuid(run_id, "run_id");
+    if (!idempotency_key.empty() && (idempotency_key.size() < 8 || idempotency_key.size() > 100))
+        throw ServiceError(400, "VALIDATION_FAILED", "Idempotency-Key must be 8-100 characters");
     auto s = db_.session();
     auto old = s.query(
         "SELECT r.conversation_id::text,r.agent_id::text,r.trigger_message_id::text,r.model_provider_id::text,r.status "
         "FROM runs r JOIN conversations c ON c.id=r.conversation_id WHERE r.id=$1 AND c.owner_id=$2", {run_id, user_id});
     if (old.rows() != 1) throw ServiceError(403, "FORBIDDEN", "run is not accessible");
+
+    auto duplicate_response = [&](PgSession& session) {
+        auto existing = session.query(
+            "SELECT r.id::text,r.status,r.trigger_message_id::text FROM retry_idempotency i "
+            "JOIN runs r ON r.id=i.run_id JOIN conversations c ON c.id=r.conversation_id "
+            "WHERE i.user_id=$1 AND i.operation='retry_run' AND i.key=$2 AND c.owner_id=$1",
+            {user_id, idempotency_key});
+        if (existing.rows() != 1)
+            throw ServiceError(409, "CONFLICT", "idempotency key is already in use");
+        auto msg = session.query(std::string("SELECT ") + kMessageColumns + " FROM messages m WHERE m.id=$1",
+                                 {existing.get(0, 2)});
+        if (msg.rows() != 1) throw ServiceError(500, "INTERNAL", "retry source message is unavailable", true);
+        Json message = message_json(msg, 0);
+        message["run_id"] = existing.get(0, 0);
+        return Json{{"message", message}, {"run_id", existing.get(0, 0)}, {"status", existing.get(0, 1)},
+                    {"events_url", "/api/v1/runs/" + existing.get(0, 0) + "/events"}, {"duplicate", true}};
+    };
+
+    if (!idempotency_key.empty()) {
+        auto existing = s.query(
+            "SELECT 1 FROM retry_idempotency WHERE user_id=$1 AND operation='retry_run' AND key=$2",
+            {user_id, idempotency_key});
+        if (existing.rows() == 1) return duplicate_response(s);
+    }
     if (old.get(0, 4) != "failed" && old.get(0, 4) != "cancelled")
         throw ServiceError(409, "CONFLICT", "only failed or cancelled runs can be retried");
+
     const std::string new_run_id = uuid4();
     const std::string job_id = uuid4();
     s.begin();
@@ -304,6 +332,16 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
                 "VALUES($1,$2,$3,$4,$5,'queued')",
                 {new_run_id, old.get(0, 0), old.get(0, 1), old.get(0, 2), old.get(0, 3)});
         s.query("INSERT INTO jobs(id,run_id,status) VALUES($1,$2,'queued')", {job_id, new_run_id});
+        if (!idempotency_key.empty()) {
+            auto claimed = s.query(
+                "INSERT INTO retry_idempotency(user_id,operation,key,run_id,source_run_id) "
+                "VALUES($1,'retry_run',$2,$3,$4) ON CONFLICT (user_id,operation,key) DO NOTHING RETURNING run_id::text",
+                {user_id, idempotency_key, new_run_id, run_id});
+            if (claimed.rows() == 0) {
+                s.rollback();
+                return duplicate_response(s);
+            }
+        }
         s.query("UPDATE conversations SET updated_at=now() WHERE id=$1", {old.get(0, 0)});
         audit(s, "user", user_id, "run.retry", "run", new_run_id, "success", request_id, {{"source_run_id", run_id}});
         auto msg = s.query(std::string("SELECT ") + kMessageColumns + " FROM messages m WHERE m.id=$1", {old.get(0, 2)});
@@ -572,12 +610,15 @@ Json CoreService::updateJobStatus(const std::string& job_id, const std::string& 
     s.begin();
     try {
         auto r = s.query(
-            "SELECT j.status,j.attempt_count,j.max_attempts,r.status,r.cancel_requested,r.agent_id::text,j.lease_token "
+            "SELECT j.status,j.attempt_count,j.max_attempts,r.status,r.cancel_requested,r.agent_id::text,j.lease_token,"
+            "COALESCE(j.lease_until>now(),false) "
             "FROM jobs j JOIN runs r ON r.id=j.run_id WHERE j.id=$1 AND r.id=$2 "
             "FOR UPDATE OF j,r", {job_id, run_id});
         if (r.rows() != 1) throw ServiceError(409, "JOB_LEASE_INVALID", "job lease is invalid", true);
         if (r.get(0, 3) == "succeeded" || r.get(0, 3) == "failed" || r.get(0, 3) == "cancelled")
             return {{"accepted", true}, {"duplicate", true}, {"run_status", r.get(0, 3)}, {"final_event_seq", 0}};
+        if (r.get(0, 0) != "running" || lease_token.empty() || r.get(0, 6) != lease_token || r.get(0, 7) != "t")
+            throw ServiceError(409, "JOB_LEASE_INVALID", "job lease is invalid or expired", true);
 
         std::string effective = status;
         if (r.get(0, 4) == "t" && effective == "succeeded") effective = "cancelled";

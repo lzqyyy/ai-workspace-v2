@@ -56,7 +56,7 @@ python tests/e2e.py
 curl.exe http://localhost:8080/api/v1/health
 ```
 
-期望：`{"status":"ok","database":"ok","version":"1.0.0"}`。
+期望：`{"status":"ok","database":"ok","version":"1.0.0"}`，HTTP 200。数据库不可用时返回 HTTP 503 和 `{"status":"degraded","database":"unavailable","version":"1.0.0"}`；可用 `./scripts/test-health.ps1` 验证停库与恢复。
 
 ## 6. 故障排查
 

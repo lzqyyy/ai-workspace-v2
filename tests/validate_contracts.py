@@ -55,6 +55,9 @@ def main() -> int:
     }
     missing = EXPECTED_PATHS - operations
     assert not missing, f"missing OpenAPI operations: {sorted(missing)}"
+    assert "503" in api["paths"]["/api/v1/health"]["get"]["responses"], "health must document 503"
+    retry_parameters = api["paths"]["/api/v1/runs/{run_id}/retry"]["post"]["parameters"]
+    assert any(parameter.get("name") == "Idempotency-Key" for parameter in retry_parameters), "retry idempotency key missing"
 
     schemas = api["components"]["schemas"]
     for name in ("User", "Agent", "Conversation", "Message", "Run", "Error"):

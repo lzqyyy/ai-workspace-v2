@@ -9,6 +9,7 @@
 | conversations | owner_id, agent_id, project_id | project_id 为 L2 可空预留 |
 | messages | conversation_id, seq, sender_type, content, run_id | 用户消息与最终 Agent 消息 |
 | runs | trigger_message_id, status, cancel_requested | 一次模型执行 |
+| retry_idempotency | user_id, operation, key, run_id, source_run_id | Retry Idempotency-Key 与首次创建 Run 的映射 |
 | jobs | run_id, lease_token, lease_until, attempt_count | PostgreSQL 租约队列 |
 | run_events | run_id, seq, event_type, payload_jsonb | SSE 回放事实源 |
 | audit_events | action, resource, result, request_id | 不含消息正文和密钥 |

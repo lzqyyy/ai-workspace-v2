@@ -8,6 +8,8 @@
 | C++ 构建 | `./scripts/build.ps1` | Drogon、libpq、OpenSSL、gRPC 链接 |
 | Worker 单元 | `go test ./worker/...` | Mock 流式、提示词、取消 |
 | E2E | `python tests/e2e.py` | 登录、Agent、会话、发送、SSE、落库、幂等、取消、重试、越权 |
+| Lease | `./scripts/test-lease.ps1` | 停止 Worker 后领取 queued Job，错误 lease 被拒绝 |
+| Health | `./scripts/test-health.ps1` | PostgreSQL 停机 503、恢复 200 |
 
 ## 2. E2E 覆盖
 
@@ -23,8 +25,15 @@
 10. 第二用户访问会话消息返回 403。
 11. 立即取消后 SSE 收到 `run.cancelled`，不写 assistant 消息。
 12. 取消后的 Run 可创建新 Run 并成功完成。
+13. 非字符串登录、Agent、会话、消息字段返回 400 `VALIDATION_FAILED`。
+14. Retry 同一 Idempotency-Key 返回首次 Run，不同 Key 创建新 Run。
 
-## 3. 手动验收
+## 3. 专项测试
+
+- `./scripts/test-lease.ps1`：停止 Worker，使用 gRPC 测试程序领取 queued Job，先以错误 lease 调 `UpdateJobStatus` 并断言 `JOB_LEASE_INVALID`，再用正确 lease 取消清理；最后恢复 Worker。
+- `./scripts/test-health.ps1`：在 Compose 环境中停/启 PostgreSQL，验证 `/api/v1/health` 的状态码和响应体。
+
+## 4. 手动验收
 
 - 浏览器登录、创建 Agent、创建会话、发送消息，观察流式回复。
 - 运行中取消，页面显示已取消，不继续增长。
@@ -34,7 +43,7 @@
 - 浏览器级自动检查：登录、会话加载、提交消息、SSE 完成，且模型回复包含本次用户输入。
 - 截图证据：`docs/evidence/ui-login.png`、`ui-workspace.png`、`ui-completed.png`。
 
-## 4. 通过记录
+## 5. 通过记录
 
 ```text
 contract validation: PASS
@@ -42,8 +51,10 @@ C++ workspace_server: built successfully
 Go worker tests: PASS
 E2E: PASS
 duplicate_callback: PASS
+wrong_lease: PASS
 sse_replay: PASS
 cross_user_denied: PASS
 cancel_and_retry: PASS
+health_503_and_recovery: PASS
 browser ui check: PASS
 ```

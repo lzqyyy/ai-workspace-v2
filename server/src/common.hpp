@@ -82,6 +82,14 @@ inline std::string trim(std::string value)
     return value;
 }
 
+inline std::string json_string(const Json& body, const std::string& field, std::string fallback = {})
+{
+    auto value = body.find(field);
+    if (value == body.end() || value->is_null()) return fallback;
+    if (!value->is_string()) throw ServiceError(400, "VALIDATION_FAILED", field + " must be a string");
+    return value->get<std::string>();
+}
+
 inline std::string random_bytes_hex(std::size_t count)
 {
     std::vector<unsigned char> bytes(count);

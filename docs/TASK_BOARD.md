@@ -1,6 +1,6 @@
 # 基础对话平台任务看板
 
-更新时间：2026-11-12
+更新时间：2026-11-13
 当前版本：V0.1.1
 
 ## 当前任务
@@ -26,6 +26,7 @@
 | H01 Demo 密码策略对齐 | COORD/CORE/WEB | DONE | `004_demo_password`、8 位策略、E2E |
 | H02 本地 Origin 允许列表 | COORD/CORE | DONE | localhost/127.0.0.1 允许，其他拒绝 |
 | HOTFIX-20261112 Docker Core 构建依赖 | COORD/QA | DONE | 固定 Drogon 1.9.14，Compose 构建/启动/E2E 通过 |
+| HOTFIX-20261113 Core 一致性与健康检查 | CORE/WEB/QA | DONE | Lease 校验、retry 幂等、字段类型、会话切换 SSE、health 503；专项与 E2E PASS |
 | A00 AI 多 Agent 维护契约 | COORD | DONE | `AGENTS.md` V1.1、分支与单写者协议 |
 | A01 GitHub 自动同步 | COORD | DONE | `.agents/skills/github-auto-sync/` |
 

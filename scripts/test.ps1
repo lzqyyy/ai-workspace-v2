@@ -22,8 +22,8 @@ if ($Docker) {
         & (Join-Path $PSScriptRoot 'test-contracts.ps1') -Docker
         if ($LASTEXITCODE -ne 0) { throw 'Contract checks failed' }
 
-        Invoke-Docker @('run', '--rm', '-v', "${root}:/src", '-w', '/src', '-e', 'GOTOOLCHAIN=local', '-e', 'GOFLAGS=-buildvcs=false', 'golang:1.25-bookworm', 'go', 'test', './worker/...') 'Worker unit tests failed in Docker'
-        Invoke-Docker @('run', '--rm', '-v', "${root}:/src", '-w', '/src', '-e', 'GOTOOLCHAIN=local', '-e', 'GOFLAGS=-buildvcs=false', 'golang:1.25-bookworm', 'go', 'vet', './worker/...') 'Worker go vet failed in Docker'
+        Invoke-Docker @('run', '--rm', '-v', "${root}:/src", '-v', 'ai-workspace-v2-go-mod:/go/pkg/mod', '-w', '/src', '-e', 'GOTOOLCHAIN=local', '-e', 'GOFLAGS=-buildvcs=false', 'golang:1.25-bookworm', 'go', 'test', './worker/...') 'Worker unit tests failed in Docker'
+        Invoke-Docker @('run', '--rm', '-v', "${root}:/src", '-v', 'ai-workspace-v2-go-mod:/go/pkg/mod', '-w', '/src', '-e', 'GOTOOLCHAIN=local', '-e', 'GOFLAGS=-buildvcs=false', 'golang:1.25-bookworm', 'go', 'vet', './worker/...') 'Worker go vet failed in Docker'
         Invoke-Docker @('run', '--rm', '-v', "${root}:/src", '-w', '/src', 'node:24-bookworm-slim', 'node', '--check', 'frontend/app.js') 'Frontend syntax check failed in Docker'
         Invoke-Docker @('run', '--rm', '-v', "${root}:/src", '-w', '/src', 'node:24-bookworm-slim', 'node', 'tests/frontend_state_test.js') 'Frontend state test failed in Docker'
 

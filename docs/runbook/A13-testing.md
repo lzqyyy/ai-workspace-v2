@@ -36,8 +36,8 @@
 ## 3. 工具探测与容器入口
 
 - 宿主脚本会探测 `PYTHON`/`python`/`python3`/`py -3`、`PROTOC`、`.tools/`、Go 与 Node；缺失时给出对应的可直接执行命令。
-- `test-contracts.ps1 -Docker` 在临时 Ubuntu 容器中安装 Python/PyYAML/protoc，不改宿主环境。
-- `test.ps1 -Docker` 依次执行契约、Go test/vet、前端检查和 E2E；E2E 通过 Compose 内部网络访问 `core:8080`，helper 使用 `GRPC_ADDR=core:50051`。
+- `test-contracts.ps1 -Docker` 使用 `deploy/contract-tools.Dockerfile` 构建并复用本地 `ai-workspace-v2-contract-tools:local` 镜像，内含 Python/PyYAML/protoc，不改宿主环境且无需每次 `apt-get`。
+- `test.ps1 -Docker` 依次执行契约、Go test/vet、前端检查和 E2E；Go 测试复用 `ai-workspace-v2-go-mod` 命名卷，E2E 通过 Compose 内部网络访问 `core:8080`，helper 使用 `GRPC_ADDR=core:50051`。
 
 ## 4. 专项测试
 

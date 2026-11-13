@@ -8,7 +8,7 @@ if ($Docker) {
     if (!(Get-Command docker -ErrorAction SilentlyContinue)) { throw 'Docker CLI not found.' }
     Push-Location $root
     try {
-        & docker run --rm -v "${root}:/src" -w /src -e GOTOOLCHAIN=local golang:1.25-bookworm go build -buildvcs=false -o build/duplicate-callback-linux ./tests/duplicate_callback
+        & docker run --rm -v "${root}:/src" -v ai-workspace-v2-go-mod:/go/pkg/mod -w /src -e GOTOOLCHAIN=local golang:1.25-bookworm go build -buildvcs=false -o build/duplicate-callback-linux ./tests/duplicate_callback
         if ($LASTEXITCODE -ne 0) { throw 'Failed to build the Linux callback helper in Docker' }
 
         & docker run --rm --network ai-workspace-v2_internal -v "${root}:/src" -w /src `

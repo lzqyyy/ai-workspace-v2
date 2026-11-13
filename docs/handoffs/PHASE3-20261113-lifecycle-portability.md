@@ -95,6 +95,9 @@ PASS：`stage=database.connect`，fatal 日志包含同一 stage，未输出连�
 O2 迁移失败验证
 PASS：`stage=database.migrate directory=/missing`，fatal 日志包含 migration stage。
 
+缓存工具链验证
+PASS：contract-tools 镜像可重复构建并复用 Docker 缓存；Go test/vet 与 E2E helper 使用命名卷复用 module cache。
+
 O3 停机验证
 PASS：Compose stop core 后 exit code 0，日志出现 `startup stage=shutdown`；重启后 health 200。
 
@@ -114,8 +117,8 @@ PASS：宿主缺少 protoc 时返回可执行的 `./scripts/test-contracts.ps1 -
 
 ## 已知问题与风险
 
-- 宿主机 PATH 仍无全局 `python`/`go`/`protoc`；默认验收使用 Docker-first。
-- 宿主 E2E 在沙箱内会因本机 socket 权限被拒绝；Docker E2E 已覆盖同一测试。
+- 宿主机 PATH 仍无全局 `python`/`go`/`protoc`，但不影响验收：contract-tools 镜像和 Go/Node 官方镜像覆盖全部检查。
+- 宿主 E2E 在沙箱内仍可能因本机 socket 权限被拒绝；Docker E2E 使用 Compose 内部网络，已覆盖同一测试。
 - 当前 GitHub 账号无仓库写权限，按用户指令未 push。
 
 ## 需要其他 Agent 处理的事项
@@ -124,4 +127,4 @@ PASS：宿主缺少 protoc 时返回可执行的 `./scripts/test-contracts.ps1 -
 
 ## 下一任务建议
 
-- 将 `test.ps1 -Docker` 与 lease/health 容器回归纳入 CI，并缓存临时工具镜像以减少验证时间。
+- 将 `test.ps1 -Docker` 与 lease/health 容器回归纳入 CI；contract-tools 镜像和 Go module 命名卷已提供本地缓存基础。

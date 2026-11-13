@@ -39,7 +39,7 @@ Docker-first（Compose 服务已启动）：
 ./scripts/test.ps1 -Docker
 ```
 
-该入口不要求宿主机安装 Python、protoc 或 Go。临时容器只用于测试，不进入 Git。
+该入口不要求宿主机安装 Python、protoc 或 Go。首次会构建可缓存的本地 contract-tools 镜像，并复用 Go module 缓存；测试容器与缓存不进入 Git。
 
 可选的本机无 Docker 验证：
 

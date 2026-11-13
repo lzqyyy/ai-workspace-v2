@@ -32,6 +32,8 @@ try {
 
     if ($Build -or $Up) {
         Invoke-Compose @('build', 'core', 'worker')
+        & docker build --tag 'ai-workspace-v2-contract-tools:local' --file (Join-Path $root 'deploy\contract-tools.Dockerfile') (Join-Path $root 'deploy')
+        if ($LASTEXITCODE -ne 0) { throw 'Failed to build the cached contract-tools image' }
     }
     if ($Up) {
         Invoke-Compose @('up', '-d')

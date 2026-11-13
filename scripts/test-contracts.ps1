@@ -12,8 +12,12 @@ function Assert-Docker {
 
 function Invoke-DockerContractChecks {
     Assert-Docker
-    $script = 'set -eu; export DEBIAN_FRONTEND=noninteractive; apt-get update -qq; apt-get install -y -qq --no-install-recommends python3 python3-yaml protobuf-compiler; python3 tests/validate_contracts.py; mkdir -p build/contracts; protoc -I proto --descriptor_set_out=build/contracts/workspace_contract.pb --include_imports proto/workspace.proto'
-    & docker run --rm -v "${root}:/src" -w /src ubuntu:24.04 bash -lc $script
+    $image = 'ai-workspace-v2-contract-tools:local'
+    & docker build --tag $image --file (Join-Path $root 'deploy\contract-tools.Dockerfile') (Join-Path $root 'deploy')
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to build the cached contract-tools image' }
+
+    $script = 'set -eu; python3 tests/validate_contracts.py; mkdir -p build/contracts; protoc -I proto --descriptor_set_out=build/contracts/workspace_contract.pb --include_imports proto/workspace.proto'
+    & docker run --rm -v "${root}:/src" -w /src $image bash -lc $script
     if ($LASTEXITCODE -ne 0) { throw 'Docker contract validation failed' }
     Write-Host 'Contract checks passed in Docker.'
 }

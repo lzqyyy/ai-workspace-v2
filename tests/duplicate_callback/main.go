@@ -24,7 +24,7 @@ func main() {
 	addr := flag.String("addr", defaultAddr, "gRPC address")
 	jobID := flag.String("job", "", "job id")
 	runID := flag.String("run", "", "run id")
-	mode := flag.String("mode", "duplicate", "duplicate or reject")
+	mode := flag.String("mode", "duplicate", "duplicate, reject, or claim")
 	flag.Parse()
 
 	conn, err := grpc.NewClient(*addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -38,8 +38,28 @@ func main() {
 		rejectWrongLease(client, *jobID, *runID)
 		return
 	}
+	if *mode == "claim" {
+		job := claimNextJob(client)
+		output, _ := json.Marshal(map[string]any{"job_id": job.JobId, "run_id": job.RunId, "lease_token": job.LeaseToken,
+			"lease_expires_at_unix_ms": job.LeaseExpiresAtUnixMs, "attempt": job.Attempt, "max_attempts": job.MaxAttempts})
+		fmt.Println(string(output))
+		return
+	}
+	if *mode == "claim-once" {
+		job, available := claimOnce(client)
+		output := map[string]any{"job_available": available}
+		if available {
+			output["job_id"] = job.JobId
+			output["run_id"] = job.RunId
+			output["lease_token"] = job.LeaseToken
+			output["lease_expires_at_unix_ms"] = job.LeaseExpiresAtUnixMs
+		}
+		encoded, _ := json.Marshal(output)
+		fmt.Println(string(encoded))
+		return
+	}
 	if *mode != "duplicate" {
-		fmt.Fprintln(os.Stderr, "mode must be duplicate or reject")
+		fmt.Fprintln(os.Stderr, "mode must be duplicate, reject, or claim")
 		os.Exit(2)
 	}
 	if *jobID == "" || *runID == "" {
@@ -103,20 +123,25 @@ func rejectWrongLease(client pb.JobServiceClient, jobID, runID string) {
 func claimNextJob(client pb.JobServiceClient) *pb.JobLease {
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		response, err := client.ClaimNextJob(ctx, &pb.ClaimNextJobRequest{Meta: &pb.RequestMeta{RequestId: "e2e-lease-guard"},
-			WorkerId: "e2e-lease-guard", AvailableSlots: 1})
-		cancel()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		if response.JobAvailable && response.Job != nil {
-			return response.Job
+		job, available := claimOnce(client)
+		if available {
+			return job
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	fmt.Fprintln(os.Stderr, "timed out waiting for a job to lease")
 	os.Exit(1)
 	return nil
+}
+
+func claimOnce(client pb.JobServiceClient) (*pb.JobLease, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	response, err := client.ClaimNextJob(ctx, &pb.ClaimNextJobRequest{Meta: &pb.RequestMeta{RequestId: "e2e-lease-guard"},
+		WorkerId: "e2e-lease-guard", AvailableSlots: 1})
+	cancel()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	return response.Job, response.JobAvailable && response.Job != nil
 }

@@ -16,7 +16,7 @@ try {
     try {
         & docker run --rm --network ai-workspace-v2_internal -v "${root}:/src" -w /src `
             -e BASE_URL=http://core:8080 -e DUPLICATE_HELPER=/src/build/duplicate-callback-linux -e GRPC_ADDR=core:50051 `
-            python:3.12-slim sh -lc 'chmod +x build/duplicate-callback-linux && python tests/lease_guard.py'
+            python:3.12-slim sh -lc 'chmod +x build/duplicate-callback-linux && python tests/lease_guard.py && python tests/cancel_lease_expiry.py'
         if ($LASTEXITCODE -ne 0) { throw 'lease guard test failed' }
     }
     finally {

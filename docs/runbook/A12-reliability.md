@@ -31,10 +31,12 @@
 - queued：C++ 立即将 Job/Run 置 cancelled 并写 `run.cancelled`。
 - running：C++ 设置 `cancel_requested`；Worker 在下一次心跳或 AppendEvent 被拒绝时停止，并提交 cancelled。
 - 取消后不允许再写 message.delta。
+- `cancel_requested=true` 优先于 lease 过期与重试上限：Worker 崩溃后 Job 不再重新执行，也不写 `run.failed/MODEL_TIMEOUT`，而是终结为 `cancelled` 并写一次 `run.cancelled`。
 
 ## 5. 前端恢复
 
 - 每次 delta 更新本地 run 游标和部分内容。
 - EventSource 断线自动重连，并携带 `Last-Event-ID`。
 - 页面刷新从 localStorage 恢复 `run_id + lastEventId + partial content`。
-- 若历史中已有该 Run 的最终消息，则清除暂存，不重复订阅。
+- 若历史中已有该 Run 的最终消息，则清除暂存，不重复订阅，并显示已完成状态。
+- Retry 请求为前端 single-flight：请求期间禁用重试按钮，避免双击创建多个 Run。

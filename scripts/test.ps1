@@ -8,6 +8,10 @@ try {
     $env:GOTOOLCHAIN = 'local'
     & (Join-Path $root '.tools\go\bin\go.exe') test -buildvcs=false ./worker/...
     if ($LASTEXITCODE -ne 0) { throw 'Worker unit tests failed' }
+    node --check (Join-Path $root 'frontend\app.js')
+    if ($LASTEXITCODE -ne 0) { throw 'Frontend syntax check failed' }
+    node (Join-Path $root 'tests\frontend_state_test.js')
+    if ($LASTEXITCODE -ne 0) { throw 'Frontend state test failed' }
     & python (Join-Path $root 'tests\e2e.py')
     if ($LASTEXITCODE -ne 0) { throw 'E2E failed' }
 }

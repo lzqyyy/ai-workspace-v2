@@ -88,6 +88,7 @@ void Api::registerRoutes()
         try {
             enforce_origin(req);
             auto body = parse_body(req);
+            require_allowed_fields(body, {"username", "password"});
             auto result = service_.login(json_string(body, "username"), json_string(body, "password"), required_request_id(req));
             const std::string token = result.value("token", "");
             result.erase("token");
@@ -159,7 +160,10 @@ void Api::registerRoutes()
                 enforce_origin(req);
                 std::string client_id = idempotency_key(req);
                 auto body = parse_body(req);
-                if (client_id.empty()) client_id = json_string(body, "client_request_id");
+                const std::string body_client_id = json_string(body, "client_request_id");
+                if (!body_client_id.empty() && (body_client_id.size() < 8 || body_client_id.size() > 100))
+                    throw ServiceError(400, "VALIDATION_FAILED", "client_request_id must be 8-100 characters");
+                if (client_id.empty()) client_id = body_client_id;
                 return service_.sendMessage(s.user_id, conversation_id, body, client_id, rid);
             }, 202);
         }

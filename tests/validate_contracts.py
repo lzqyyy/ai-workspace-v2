@@ -63,6 +63,22 @@ def main() -> int:
     for name in ("User", "Agent", "Conversation", "Message", "Run", "Error"):
         assert name in schemas, f"missing schema: {name}"
 
+    conditional_bodies = (
+        ("/api/v1/auth/login", "post"),
+        ("/api/v1/conversations", "post"),
+        ("/api/v1/conversations/{conversation_id}/messages", "post"),
+    )
+    for path, method in conditional_bodies:
+        schema = api["paths"][path][method]["requestBody"]["content"]["application/json"]["schema"]
+        assert schema.get("additionalProperties") is False, f"unknown fields must be rejected: {method} {path}"
+    agent_schema = schemas["CreateAgentRequest"]
+    assert agent_schema.get("additionalProperties") is False, "CreateAgentRequest must reject unknown fields"
+    assert agent_schema["properties"]["avatar"]["maxLength"] == 500000, "avatar maxLength mismatch"
+
+    run_statuses = set(schemas["Run"]["properties"]["status"]["enum"])
+    send_statuses = set(schemas["SendMessageResponse"]["properties"]["status"]["enum"])
+    assert send_statuses == run_statuses, f"send/retry status mismatch: {send_statuses} != {run_statuses}"
+
     api_error_codes = set(schemas["Error"]["properties"]["code"]["enum"])
     documented_errors = set(re.findall(r"\| `([A-Z][A-Z0-9_]+)` \|", ERRORS.read_text(encoding="utf-8")))
     assert api_error_codes == documented_errors, (

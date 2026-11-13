@@ -429,7 +429,10 @@ components:
       properties:
         message: { $ref: '#/components/schemas/Message' }
         run_id: { type: string, format: uuid }
-        status: { type: string, enum: [queued, running] }
+        status:
+          type: string
+          description: Current run state; terminal values are available to idempotent duplicate callers.
+          enum: [queued, running, succeeded, failed, cancelled]
         events_url: { type: string }
         duplicate: { type: boolean }
     Error:

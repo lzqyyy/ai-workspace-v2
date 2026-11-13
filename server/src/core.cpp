@@ -138,6 +138,7 @@ Json CoreService::listAgents(const std::string& user_id, const std::string&)
 
 Json CoreService::createAgent(const std::string& user_id, const Json& body, const std::string& request_id)
 {
+    require_allowed_fields(body, {"name", "avatar", "system_prompt", "model_provider_id"});
     const std::string name = json_string(body, "name");
     const std::string system_prompt = json_string(body, "system_prompt");
     require_text(name, "name", 80);
@@ -145,6 +146,7 @@ Json CoreService::createAgent(const std::string& user_id, const Json& body, cons
     if (body.contains("avatar") && !body["avatar"].is_null() && !body["avatar"].is_string())
         throw ServiceError(400, "VALIDATION_FAILED", "avatar must be a string or null");
     const std::string avatar = body.contains("avatar") && body["avatar"].is_string() ? body["avatar"].get<std::string>() : "";
+    if (avatar.size() > 500000) throw ServiceError(400, "VALIDATION_FAILED", "avatar is too long");
     auto s = db_.session();
     PgResult provider;
     if (body.contains("model_provider_id") && !body["model_provider_id"].is_null()) {
@@ -191,6 +193,7 @@ Json CoreService::listConversations(const std::string& user_id, const std::strin
 
 Json CoreService::createConversation(const std::string& user_id, const Json& body, const std::string& request_id)
 {
+    require_allowed_fields(body, {"agent_id", "title"});
     const std::string agent_id = json_string(body, "agent_id");
     require_uuid(agent_id, "agent_id");
     std::string title = json_string(body, "title");
@@ -235,22 +238,24 @@ Json CoreService::listMessages(const std::string& user_id, const std::string& co
 Json CoreService::sendMessage(const std::string& user_id, const std::string& conversation_id, const Json& body,
                               const std::string& client_request_id, const std::string& request_id)
 {
+    require_allowed_fields(body, {"content", "client_request_id"});
     require_uuid(conversation_id, "conversation_id");
     const std::string content = json_string(body, "content");
     require_text(content, "content", 32000);
-    if (client_request_id.size() > 100) throw ServiceError(400, "VALIDATION_FAILED", "client_request_id is too long");
+    if (!client_request_id.empty() && (client_request_id.size() < 8 || client_request_id.size() > 100))
+        throw ServiceError(400, "VALIDATION_FAILED", "client_request_id must be 8-100 characters");
     auto s = db_.session();
-    if (!client_request_id.empty()) {
-        auto existing = s.query(
-            std::string("SELECT ") + kMessageColumns + ",r.id::text,r.status FROM messages m "
-            "JOIN conversations c ON c.id=m.conversation_id JOIN runs r ON r.trigger_message_id=m.id "
-            "WHERE c.owner_id=$1 AND m.conversation_id=$2 AND m.client_request_id=$3 AND m.sender_type='user' LIMIT 1",
-            {user_id, conversation_id, client_request_id});
-        if (existing.rows() == 1) {
-            return {{"message", message_json(existing, 0)}, {"run_id", existing.get(0, 10)},
+    const std::string duplicate_sql = std::string("SELECT ") + kMessageColumns + ",r.id::text,r.status FROM messages m "
+        "JOIN conversations c ON c.id=m.conversation_id JOIN runs r ON r.trigger_message_id=m.id "
+        "WHERE c.owner_id=$1 AND m.conversation_id=$2 AND m.client_request_id=$3 AND m.sender_type='user' LIMIT 1";
+    auto duplicate_json = [](PgResult& existing) {
+        return Json{{"message", message_json(existing, 0)}, {"run_id", existing.get(0, 10)},
                     {"status", existing.get(0, 11)}, {"events_url", "/api/v1/runs/" + existing.get(0, 10) + "/events"},
                     {"duplicate", true}};
-        }
+    };
+    if (!client_request_id.empty()) {
+        auto existing = s.query(duplicate_sql, {user_id, conversation_id, client_request_id});
+        if (existing.rows() == 1) return duplicate_json(existing);
     }
     auto conversation = s.query(
         "SELECT c.agent_id::text,a.model_provider_id::text FROM conversations c JOIN agents a ON a.id=c.agent_id "
@@ -263,11 +268,19 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
     try {
         auto msg = s.query(
             "INSERT INTO messages(id,conversation_id,sender_type,sender_id,role,content,status,client_request_id) "
-            "VALUES($1,$2,'user',$3,'user',$4,'completed',$5) RETURNING id::text,conversation_id::text,seq::text,"
+            "VALUES($1,$2,'user',$3,'user',$4,'completed',$5) "
+            "ON CONFLICT (conversation_id,client_request_id) WHERE sender_type='user' AND client_request_id IS NOT NULL "
+            "DO NOTHING RETURNING id::text,conversation_id::text,seq::text,"
             "sender_type,sender_id::text,role,content,run_id::text,status,"
             "to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')",
             {message_id, conversation_id, user_id, content,
              client_request_id.empty() ? std::nullopt : std::optional<std::string>(client_request_id)});
+        if (msg.rows() == 0) {
+            auto existing = s.query(duplicate_sql, {user_id, conversation_id, client_request_id});
+            if (existing.rows() != 1) throw ServiceError(500, "INTERNAL", "duplicate message is unavailable", true);
+            s.commit();
+            return duplicate_json(existing);
+        }
         s.query("INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status) "
                 "VALUES($1,$2,$3,$4,$5,'queued')",
                 {run_id, conversation_id, conversation.get(0, 0), message_id, conversation.get(0, 1)});
@@ -373,7 +386,7 @@ Json CoreService::cancelRun(const std::string& user_id, const std::string& run_i
             const std::string next_seq = std::to_string(std::stoll(s.query(
                 "SELECT COALESCE(MAX(seq),0)+1 FROM run_events WHERE run_id=$1", {run_id}).get(0, 0)) );
             s.query("UPDATE jobs SET status='cancelled',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE run_id=$1", {run_id});
-            s.query("UPDATE runs SET status='cancelled',cancel_requested=true,finished_at=now() WHERE id=$1", {run_id});
+            s.query("UPDATE runs SET status='cancelled',error_code='RUN_CANCELLED',cancel_requested=true,finished_at=now() WHERE id=$1", {run_id});
             s.query("INSERT INTO run_events(run_id,seq,event_type,payload_jsonb,request_id) "
                     "VALUES($1,$2,'run.cancelled',$3::jsonb,$4) ON CONFLICT (run_id,event_type) "
                     "WHERE event_type IN ('run.started','message.completed','run.failed','run.cancelled') DO NOTHING",
@@ -435,7 +448,7 @@ Json CoreService::claimNextJob(const std::string& worker_id, const std::string& 
         try {
             auto r = s.query(
                 "SELECT j.id::text,j.run_id::text,j.attempt_count,j.max_attempts,j.status,"
-                "COALESCE(j.lease_until<now(),false) AS expired FROM jobs j "
+                "COALESCE(j.lease_until<now(),false) AS expired,r.cancel_requested FROM jobs j "
                 "JOIN runs r ON r.id=j.run_id WHERE j.status='queued' OR "
                 "(j.status='running' AND j.lease_until<now()) ORDER BY j.created_at "
                 "FOR UPDATE OF j SKIP LOCKED LIMIT 1");
@@ -448,6 +461,17 @@ Json CoreService::claimNextJob(const std::string& worker_id, const std::string& 
             const int attempt = std::stoi(r.get(0, 2));
             const int max_attempts = std::stoi(r.get(0, 3));
             const std::string status = r.get(0, 4);
+            if (r.get(0, 5) == "t") {
+                auto next = s.query("SELECT COALESCE(MAX(seq),0)+1 FROM run_events WHERE run_id=$1", {run_id});
+                s.query("UPDATE jobs SET status='cancelled',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1", {job_id});
+                s.query("UPDATE runs SET status='cancelled',error_code='RUN_CANCELLED',cancel_requested=true,finished_at=now() WHERE id=$1", {run_id});
+                s.query("INSERT INTO run_events(run_id,seq,event_type,payload_jsonb,request_id) VALUES($1,$2,'run.cancelled',$3::jsonb,$4) "
+                        "ON CONFLICT (run_id,event_type) WHERE event_type IN ('run.started','message.completed','run.failed','run.cancelled') DO NOTHING",
+                        {run_id, next.get(0, 0), Json{{"reason", "user_requested"}}.dump(), request_id});
+                audit(s, "worker", worker_id, "job.cancel", "job", job_id, "success", request_id, {{"run_id", run_id}});
+                s.commit();
+                continue;
+            }
             if (status == "running") {
                 if (attempt >= max_attempts) {
                     auto next = s.query("SELECT COALESCE(MAX(seq),0)+1 FROM run_events WHERE run_id=$1", {run_id});

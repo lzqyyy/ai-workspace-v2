@@ -7,6 +7,7 @@
 | 契约 | `./scripts/test-contracts.ps1` | OpenAPI、6 RPC、SSE、错误码、Protobuf |
 | C++ 构建 | `./scripts/build.ps1` | Drogon、libpq、OpenSSL、gRPC 链接 |
 | Worker 单元 | `go test ./worker/...` | Mock 流式、提示词、取消 |
+| 前端状态 | `node tests/frontend_state_test.js` | Retry 防重复、刷新恢复、SSE 游标与完成态 |
 | E2E | `python tests/e2e.py` | 登录、Agent、会话、发送、SSE、落库、幂等、取消、重试、越权 |
 | Lease | `./scripts/test-lease.ps1` | 停止 Worker 后领取 queued Job，错误 lease 被拒绝 |
 | Health | `./scripts/test-health.ps1` | PostgreSQL 停机 503、恢复 200 |
@@ -27,10 +28,13 @@
 12. 取消后的 Run 可创建新 Run 并成功完成。
 13. 非字符串登录、Agent、会话、消息字段返回 400 `VALIDATION_FAILED`。
 14. Retry 同一 Idempotency-Key 返回首次 Run，不同 Key 创建新 Run。
+15. 两个并发请求使用同一 `client_request_id` 返回同一用户消息、同一 Run，且仅一个 `duplicate=false`。
+16. 登录、Agent、会话、消息请求拒绝未知字段；avatar、消息内容与 `client_request_id` 长度边界返回 400 `VALIDATION_FAILED`。
+17. send/retry 的 `status` 与 Run 状态枚举一致。
 
 ## 3. 专项测试
 
-- `./scripts/test-lease.ps1`：停止 Worker，使用 gRPC 测试程序领取 queued Job，先以错误 lease 调 `UpdateJobStatus` 并断言 `JOB_LEASE_INVALID`，再用正确 lease 取消清理；最后恢复 Worker。
+- `./scripts/test-lease.ps1`：停止 Worker，使用 gRPC 测试程序领取 queued Job，先以错误 lease 调 `UpdateJobStatus` 并断言 `JOB_LEASE_INVALID`，再用正确 lease 取消清理；随后领取另一 Job、通过 REST 请求取消并等待 lease 过期，断言终态为 `cancelled`、无 `MODEL_TIMEOUT` 且无 assistant 消息；最后恢复 Worker。
 - `./scripts/test-health.ps1`：在 Compose 环境中停/启 PostgreSQL，验证 `/api/v1/health` 的状态码和响应体。
 
 ## 4. 手动验收
@@ -55,6 +59,10 @@ wrong_lease: PASS
 sse_replay: PASS
 cross_user_denied: PASS
 cancel_and_retry: PASS
+concurrent_send_idempotency: PASS
+unknown_fields_and_lengths: PASS
+cancel_then_lease_expiry: PASS
+frontend_retry_refresh_reconnect: PASS
 health_503_and_recovery: PASS
 browser ui check: PASS
 ```

@@ -9,7 +9,7 @@ const els = {
   retryButton: $('retry-button'), agentDialog: $('agent-dialog'), agentForm: $('agent-form'), agentName: $('agent-name'),
   agentPrompt: $('agent-prompt'), agentError: $('agent-error'), agentSubmit: $('agent-submit'), toast: $('toast')
 };
-const state = { user:null, agents:[], conversations:[], activeConversation:null, messages:[], agentId:null, run:null, eventSource:null, lastRunId:null, toastTimer:null };
+const state = { user:null, agents:[], conversations:[], activeConversation:null, messages:[], agentId:null, run:null, eventSource:null, lastRunId:null, retrying:false, toastTimer:null };
 class ApiError extends Error { constructor(code,message,status,retryable=false){super(message);this.code=code;this.status=status;this.retryable=retryable;} }
 function uuid(){ if(crypto.randomUUID) return crypto.randomUUID(); return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16);}); }
 async function api(path,options={}){
@@ -114,12 +114,14 @@ async function cancelRun(){
   finally{els.cancelButton.disabled=false;}
 }
 async function retryRun(){
-  if(!state.lastRunId)return;clearError();setRunState('active','正在重试');setSending(true);
+  if(!state.lastRunId||state.retrying)return;
+  state.retrying=true;els.retryButton.disabled=true;clearError();setRunState('active','正在重试');setSending(true);
   try{
     const response=await api(`/api/v1/runs/${encodeURIComponent(state.lastRunId)}/retry`,{method:'POST',headers:{'Idempotency-Key':`retry-${uuid()}`}});
     if(!state.messages.some(message=>message.id===response.message.id))state.messages.push(response.message);
     renderMessages();state.lastRunId=response.run_id;beginRun(response.run_id,state.activeConversation.id,0,'');
   }catch(error){setSending(false);setRunState('error','重试失败');setError(error.message,error.retryable);}
+  finally{state.retrying=false;els.retryButton.disabled=false;}
 }function beginRun(runId,conversationId,lastEventId=0,partial=''){
   closeRunStream();state.run={runId,conversationId,lastEventId:Number(lastEventId)||0,partial:partial||'',reconnecting:false};persistRun();
   setSending(true);setRunState('active','Run 已排队');clearError();renderMessages();connectRun();
@@ -168,7 +170,7 @@ async function restoreActiveRun(){
   const conversation=state.conversations.find(item=>item.id===saved.conversationId);if(!conversation){localStorage.removeItem('workspace.activeRun');return;}
   if(state.activeConversation?.id!==conversation.id)await selectConversation(conversation.id);
   const finalMessage=state.messages.find(message=>message.sender_type==='agent'&&message.run_id===saved.runId);
-  if(finalMessage){localStorage.removeItem('workspace.activeRun');return;}
+  if(finalMessage){localStorage.removeItem('workspace.activeRun');state.lastRunId=saved.runId;setRunState('success','已完成');setSending(false);return;}
   state.lastRunId=saved.runId;beginRun(saved.runId,saved.conversationId,saved.lastEventId||0,saved.partial||'');
 }
 function autoResize(){els.messageInput.style.height='auto';els.messageInput.style.height=`${Math.min(els.messageInput.scrollHeight,180)}px`;}

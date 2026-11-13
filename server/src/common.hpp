@@ -10,6 +10,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <iomanip>
+#include <initializer_list>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -88,6 +89,15 @@ inline std::string json_string(const Json& body, const std::string& field, std::
     if (value == body.end() || value->is_null()) return fallback;
     if (!value->is_string()) throw ServiceError(400, "VALIDATION_FAILED", field + " must be a string");
     return value->get<std::string>();
+}
+
+inline void require_allowed_fields(const Json& body, std::initializer_list<std::string_view> allowed)
+{
+    for (auto it = body.begin(); it != body.end(); ++it) {
+        const std::string_view key = it.key();
+        const bool known = std::any_of(allowed.begin(), allowed.end(), [&](std::string_view field) { return key == field; });
+        if (!known) throw ServiceError(400, "VALIDATION_FAILED", "unknown field: " + std::string(key));
+    }
 }
 
 inline std::string random_bytes_hex(std::size_t count)

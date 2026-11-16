@@ -204,5 +204,15 @@ vm.runInContext(fs.readFileSync('frontend/app.js', 'utf8'), context);
   assert.strictEqual(vm.runInContext('state.run.lastEventId', context), 10, 'SSE cursor must advance');
   assert.strictEqual(vm.runInContext('state.run.partial', context), 'partial', 'duplicate SSE events must be deduplicated');
 
-  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, sse_reconnect:true, sse_dedupe:true}));
+  let pollCallback = null;
+  context.setInterval = (callback) => { pollCallback = callback; return 1; };
+  vm.runInContext(`
+    document.hidden = true; state.pollTimer = null; state.activeConversation = {id:'conversation-hidden'}; __pollLoads = 0;
+    loadMessages = async () => { __pollLoads += 1; return false; }; startPolling();
+  `, context);
+  assert.ok(pollCallback, 'active conversation must schedule background discovery polling');
+  await pollCallback();
+  assert.strictEqual(vm.runInContext('__pollLoads', context), 1, 'hidden pages must continue shared message discovery');
+
+  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, background_polling:true, sse_reconnect:true, sse_dedupe:true}));
 })().catch((error) => { console.error(error); process.exitCode = 1; });

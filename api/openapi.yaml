@@ -7,7 +7,7 @@ info:
     All API requests are same-origin and authenticated by an HttpOnly session cookie.
     Mutating requests must include `X-Request-ID`; EventSource passes `request_id` as a query parameter.
     Project-first routes are frozen in this package; their C++ handlers are delivered by later packages.
-    Non-members receive 403. A Project archive request must return 409 while any queued/running Run exists.
+    Non-members receive 403. The MVP PRD defines Project archive semantics, but no Project archive operation is frozen in this OpenAPI; do not infer a route or method until a versioned contract change adds one.
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -639,7 +639,7 @@ components:
       enum: [owner, editor, viewer]
     Project:
       type: object
-      description: Project members can read all Conversations in the Project. Archiving is owner-only and must return 409 while a queued/running Run exists.
+      description: Project members can read all Conversations in the Project. The PRD defines owner-only archive semantics, but this contract has no archive operation.
       required: [id, name, status, created_by_user_id, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }

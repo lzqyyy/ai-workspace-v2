@@ -129,8 +129,12 @@ CoreService::CoreService(Config config) : config_(std::move(config)), db_(config
 
 void CoreService::require_uuid(const std::string& value, const std::string& field)
 {
-    if (value.size() != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-')
-        throw ServiceError(400, "VALIDATION_FAILED", field + " must be a UUID");
+    bool valid = value.size() == 36;
+    for (std::size_t i = 0; valid && i < value.size(); ++i) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) valid = value[i] == '-';
+        else valid = std::isxdigit(static_cast<unsigned char>(value[i])) != 0;
+    }
+    if (!valid) throw ServiceError(400, "VALIDATION_FAILED", field + " must be a UUID");
 }
 
 void CoreService::require_text(const std::string& value, const std::string& field, std::size_t max_length)

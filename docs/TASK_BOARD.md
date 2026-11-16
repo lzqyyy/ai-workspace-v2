@@ -37,6 +37,7 @@
 | PACKAGE-D-20261116 Project-first 多用户前端 | WEB | REVIEW | Project 切换/创建、成员/Agent 管理、共享 Conversation、target Agent 发送、共享 Run SSE、角色交互控制；状态测试与 headless 浏览器 E2E PASS |
 | PACKAGE-E-20261116 2H+2A 验收与稳定性 | QA/CORE | REVIEW | 双浏览器 owner/editor + 两 Agent 同会话、双方 SSE、权限矩阵、并发 409、幂等、迁移重放；Docker-first 全量 PASS |
 | PACKAGE-F-20261116 交付、演示与交接 | QA/COORD | REVIEW | Docker-first demo seed、2H+2A 手工/自动验收入口、健康证据、Runbook、验收记录与最终交接 |
+| HOTFIX-20261116 MVP 合并审查阻塞 | CORE/QA | REVIEW | UUID 严格格式校验、双独立浏览器 2H+2A 竞态修复、Project 归档契约缺口记录；全量/浏览器/health PASS |
 
 ## Gate 结果
 

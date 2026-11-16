@@ -407,7 +407,7 @@ async function restoreActiveRun() {
   beginRun(saved.runId, saved.conversationId, saved.lastEventId || 0, saved.partial || '', saved.ownerId || null, saved.targetAgentId || null);
 }
 function startPolling() {
-  stopPolling(); state.pollTimer = setInterval(async () => { if (!state.activeConversation || document.hidden) return; await loadMessages(false); }, 2500);
+  stopPolling(); state.pollTimer = setInterval(async () => { if (!state.activeConversation) return; await loadMessages(false); }, 2500);
 }
 function stopPolling() { if (state.pollTimer) clearInterval(state.pollTimer); state.pollTimer = null; }
 

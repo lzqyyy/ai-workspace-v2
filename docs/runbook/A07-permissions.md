@@ -1,4 +1,4 @@
-# A07 最小资源权限设计 V1.0
+# A07 资源权限设计 V1.1（Project 目标契约）
 
 ## 1. 身份与会话
 
@@ -7,25 +7,31 @@
 - 数据库只保存令牌 SHA-256 摘要和到期时间。
 - 密码：PBKDF2-HMAC-SHA256，独立盐，120000 次迭代。
 
-## 2. 资源授权矩阵
+## 2. 目标 Project 授权矩阵
 
-| 操作 | 判定 |
+| 操作 | 目标判定 |
 |---|---|
-| 读取 Agent 列表 | `agents.owner_id = current_user_id` |
-| 创建 Agent | 当前用户成为 owner；模型 Provider 必须已启用 |
-| 创建会话 | Agent 必须属于当前用户且 active |
-| 读取消息 | 会话必须属于当前用户 |
-| 发送消息 | 会话与 Agent 均属于当前用户且 active |
-| 订阅/取消/重试 Run | Run 所属会话必须属于当前用户 |
+| 读取 Project/成员/Agent | 当前用户是 Project member |
+| 读取 Conversation/Message/SSE | 当前用户是 Conversation 所属 Project 的 member |
+| 创建 Conversation、发送消息 | member 角色为 `owner` 或 `editor` |
+| 选择目标 Agent | `target_agent_id` 是当前 Project 的 active Project Agent |
+| 添加自己的 Agent | member 角色为 `owner/editor`，且 `agents.owner_id = current_user_id` |
+| 取消自己的 Run | member 角色为 `owner/editor`，且 Run 由当前用户发起 |
+| 取消其他成员的 Run | 仅 Project `owner` |
+| 重试自己的 Run | member 角色为 `owner/editor` |
+| 重试其他成员的 Run | 仅 Project `owner` |
+| 添加/移除成员、修改角色、归档 Project | 仅 Project `owner` |
 | Worker 访问 Job/Context/Event | 必须持有未过期且匹配的 lease_token |
-| 访问不存在或他人资源 | 返回最小化 `403/404`，不返回资源内容 |
+| 非 Project 成员访问 Project 资源 | 返回最小化 `403`，不泄露资源是否存在 |
 
 ## 3. 审计
 
-记录登录、登出、Agent/会话创建、发送消息、取消、重试、权限拒绝和 Worker 终态。审计字段仅包含资源 ID、动作、结果、`request_id`、错误码；禁止记录消息正文、Authorization、API Key。
+记录登录、登出、Project/成员/Agent、Conversation、发送消息、取消、重试、权限拒绝和 Worker 终态。审计字段仅包含资源 ID、动作、结果、`request_id`、错误码；禁止记录消息正文、Authorization、API Key。
 
-## 4. 已知边界
+## 4. 实现状态与边界
 
-- 本轮仅普通用户和所有者模型，不实现 Team、Project、双 Owner。
+- 工程包 A 只冻结数据模型与 OpenAPI 契约，不实现 Project 路由和共享 Conversation 权限。
+- 工程包 B/C 完成切换前，当前 C++ 运行时仍使用单 Owner 资源隔离；不得宣称多人 Project 已可用。
+- Agent 所有权继续由 `agents.owner_id` 表示，不因加入 Project 转让。
 - 前端权限状态仅用于交互，任何权限判断都不以前端缓存为依据。
 - 生产必须在 HTTPS 反向代理后运行。

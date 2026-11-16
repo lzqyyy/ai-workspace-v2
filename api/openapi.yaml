@@ -6,11 +6,14 @@ info:
     Frozen REST contract between the native browser client and the C++ core.
     All API requests are same-origin and authenticated by an HttpOnly session cookie.
     Mutating requests must include `X-Request-ID`; EventSource passes `request_id` as a query parameter.
+    Project-first routes are frozen in this package; their C++ handlers are delivered by later packages.
+    Non-members receive 403. A Project archive request must return 409 while any queued/running Run exists.
 servers:
   - url: http://localhost:8080
     description: Local development
 tags:
   - name: Auth
+  - name: Projects
   - name: Agents
   - name: Conversations
   - name: Runs
@@ -74,6 +77,279 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/projects:
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Create a Project and make the caller its owner
+      description: Any authenticated user may create a Project. The caller is inserted as the initial owner member.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProjectRequest' }
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: List Projects visible through membership
+      description: Returns only Projects where the current user is a member.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Member Projects
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Project' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/projects/{project_id}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [Projects]
+      operationId: getProject
+      summary: Read a Project as a member
+      description: All Project members may read the Project. Non-members receive 403 without resource details.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Project
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/projects/{project_id}/members:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [Projects]
+      operationId: addProjectMember
+      summary: Add an existing user to a Project
+      description: Owner only. A user has at most one role in a Project.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddProjectMemberRequest' }
+      responses:
+        '201':
+          description: Member added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectMember' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    get:
+      tags: [Projects]
+      operationId: listProjectMembers
+      summary: List Project members
+      description: Any Project member may read the member list.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Project members
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProjectMember' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/projects/{project_id}/members/{user_id}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/UserId'
+    patch:
+      tags: [Projects]
+      operationId: updateProjectMember
+      summary: Change a Project member role
+      description: Owner only. Downgrading the last owner returns 409.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProjectMemberRequest' }
+      responses:
+        '200':
+          description: Member role updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectMember' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Projects]
+      operationId: removeProjectMember
+      summary: Remove a Project member
+      description: Owner only. Removing the last owner or a member with an active Run returns 409.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '204': { description: Member removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/projects/{project_id}/agents:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [Projects]
+      operationId: addProjectAgent
+      summary: Add the caller's own Agent to a Project
+      description: Owner/editor only. The Agent owner must equal the caller and already be a Project member.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddProjectAgentRequest' }
+      responses:
+        '201':
+          description: Agent added to Project
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectAgent' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    get:
+      tags: [Projects]
+      operationId: listProjectAgents
+      summary: List Agents available in a Project
+      description: Any Project member may read the Project Agent list.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Project Agents
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ProjectAgent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/projects/{project_id}/agents/{agent_id}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/ProjectAgentId'
+    delete:
+      tags: [Projects]
+      operationId: removeProjectAgent
+      summary: Remove an Agent from a Project
+      description: The Agent owner or Project owner may remove it. An active Run using the Agent returns 409.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '204': { description: Agent removed from Project; history is retained }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/projects/{project_id}/conversations:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [Conversations]
+      operationId: createProjectConversation
+      summary: Create a shared Project Conversation
+      description: Owner/editor only. All Project members can later read the Conversation and its messages.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProjectConversationRequest' }
+      responses:
+        '201':
+          description: Project Conversation created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Conversation' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    get:
+      tags: [Conversations]
+      operationId: listProjectConversations
+      summary: List all Conversations in a Project
+      description: Any Project member may read every Conversation in the Project.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Project Conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Conversation' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
   /api/v1/agents:
     get:
       tags: [Agents]
@@ -117,7 +393,8 @@ paths:
     get:
       tags: [Conversations]
       operationId: listConversations
-      summary: List only the current user's conversations
+      summary: List Conversations visible through Project membership (legacy URL)
+      description: Project members can read every Conversation in the Project. The legacy URL is retained.
       parameters:
         - $ref: '#/components/parameters/RequestId'
       responses:
@@ -136,7 +413,8 @@ paths:
     post:
       tags: [Conversations]
       operationId: createConversation
-      summary: Create a conversation using an owned agent
+      summary: Create a compatibility Conversation using an owned agent
+      description: Legacy single-user URL. New Project-first clients should use POST /api/v1/projects/{project_id}/conversations.
       parameters:
         - $ref: '#/components/parameters/RequestId'
       requestBody:
@@ -166,7 +444,8 @@ paths:
     get:
       tags: [Conversations]
       operationId: listMessages
-      summary: Read stable, ordered conversation history
+      summary: Read stable, ordered history as a Project member
+      description: Any Project member may read all messages in a shared Conversation.
       parameters:
         - $ref: '#/components/parameters/RequestId'
         - name: after_seq
@@ -190,7 +469,8 @@ paths:
     post:
       tags: [Conversations]
       operationId: sendMessage
-      summary: Atomically create a user message, run, and queued job
+      summary: Send a Project message to the selected target Agent
+      description: Owner/editor only. target_agent_id must identify an active Agent in the Conversation's Project. An existing queued/running Run returns 409.
       parameters:
         - $ref: '#/components/parameters/RequestId'
         - name: Idempotency-Key
@@ -204,10 +484,14 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [content]
+              required: [content, target_agent_id]
               properties:
                 content: { type: string, minLength: 1, maxLength: 32000 }
                 client_request_id: { type: string, minLength: 8, maxLength: 100 }
+                target_agent_id:
+                  type: string
+                  format: uuid
+                  description: Required active Project Agent selected for this Run.
       responses:
         '202':
           description: Run queued
@@ -225,7 +509,8 @@ paths:
     get:
       tags: [Runs]
       operationId: streamRunEvents
-      summary: Subscribe to persisted run events with Last-Event-ID replay
+      summary: Subscribe as a Project member with Last-Event-ID replay
+      description: Any Project member may stream the Run. Viewer access is read-only; non-members receive 403.
       parameters:
         - name: request_id
           in: query
@@ -263,7 +548,8 @@ paths:
     post:
       tags: [Runs]
       operationId: cancelRun
-      summary: Request cancellation; queued runs cancel immediately
+      summary: Cancel a Run under Project member permissions
+      description: Owner/editor may cancel their own Run; Project owner may cancel any Run; viewer cannot cancel.
       parameters:
         - $ref: '#/components/parameters/RequestId'
       responses:
@@ -282,7 +568,8 @@ paths:
     post:
       tags: [Runs]
       operationId: retryRun
-      summary: Create a new run for the same user trigger after a terminal failure/cancel
+      summary: Retry a Run under Project member permissions
+      description: Owner/editor may retry their own terminal Run; Project owner may retry another member's Run; viewer cannot retry.
       parameters:
         - $ref: '#/components/parameters/RequestId'
         - name: Idempotency-Key
@@ -346,6 +633,79 @@ components:
       required: true
       schema: { type: string, format: uuid }
   schemas:
+    ProjectRole:
+      type: string
+      description: Frozen MVP role set. Admin and guest are out of scope.
+      enum: [owner, editor, viewer]
+    Project:
+      type: object
+      description: Project members can read all Conversations in the Project. Archiving is owner-only and must return 409 while a queued/running Run exists.
+      required: [id, name, status, created_by_user_id, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, 'null'] }
+        status: { type: string, enum: [active, archived] }
+        created_by_user_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProjectMember:
+      type: object
+      description: One role per user per Project. At least one owner is required.
+      required: [project_id, user_id, role, created_at, updated_at]
+      properties:
+        project_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        username: { type: string }
+        display_name: { type: string }
+        role: { $ref: '#/components/schemas/ProjectRole' }
+        added_by_user_id: { type: [string, 'null'], format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProjectAgent:
+      type: object
+      description: Project Agent ownership remains on Agent.owner_id; this mapping grants Project use without transfer.
+      required: [project_id, agent_id, added_by_user_id, created_at]
+      properties:
+        project_id: { type: string, format: uuid }
+        agent_id: { type: string, format: uuid }
+        added_by_user_id: { type: string, format: uuid }
+        agent: { $ref: '#/components/schemas/Agent' }
+        created_at: { type: string, format: date-time }
+    CreateProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, 'null'], maxLength: 20000 }
+    AddProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [user_id, role]
+      properties:
+        user_id: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/ProjectRole' }
+    UpdateProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role: { $ref: '#/components/schemas/ProjectRole' }
+    AddProjectAgentRequest:
+      type: object
+      additionalProperties: false
+      required: [agent_id]
+      properties:
+        agent_id: { type: string, format: uuid }
+    CreateProjectConversationRequest:
+      type: object
+      additionalProperties: false
+      required: [agent_id]
+      description: agent_id becomes the Conversation's historical default Agent; each new message still requires target_agent_id.
+      properties:
+        agent_id: { type: string, format: uuid }
+        title: { type: string, maxLength: 200 }
     User:
       type: object
       required: [id, username, display_name]
@@ -388,10 +748,16 @@ components:
         model_provider_id: { type: string, format: uuid }
     Conversation:
       type: object
+      description: Project membership grants access to every Conversation in the Project. owner_id is the creator field; agent_id is the historical default Agent.
       required: [id, agent_id, title, status, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
-        agent_id: { type: string, format: uuid }
+        project_id: { type: [string, 'null'], format: uuid }
+        owner_id: { type: string, format: uuid }
+        agent_id:
+          type: string
+          format: uuid
+          description: Historical default Agent. New message sends use target_agent_id.
         agent_name: { type: string }
         title: { type: string }
         status: { type: string, enum: [active, archived] }
@@ -458,7 +824,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     Forbidden:
-      description: Resource access denied
+      description: Authenticated user is not a Project member or lacks the required Project role
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -468,7 +834,7 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     Conflict:
-      description: State or idempotency conflict
+      description: State conflict, including an existing active Run on send, removal of a member/Agent with an active Run, archiving a Project with an active Run, or removing/downgrading the last owner
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

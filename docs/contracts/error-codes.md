@@ -9,9 +9,9 @@
 | `AUTH_REQUIRED` | 401 | 否 | 请先登录 | 缺少或过期会话 |
 | `AUTH_INVALID` | 401 | 否 | 用户名或密码错误 | 登录凭据错误 |
 | `VALIDATION_FAILED` | 400 | 否 | 输入内容不完整或格式错误 | 参数校验失败 |
-| `FORBIDDEN` | 403 | 否 | 无权访问该资源 | 资源不属于当前用户 |
+| `FORBIDDEN` | 403 | 否 | 无权访问该资源 | 非 Project 成员、Project 角色不足，或 Agent 不属于当前 Project |
 | `NOT_FOUND` | 404 | 否 | 请求的资源不存在 | 不存在或避免枚举 |
-| `CONFLICT` | 409 | 视情况 | 当前操作发生冲突 | 幂等键冲突或状态冲突 |
+| `CONFLICT` | 409 | 视情况 | 当前操作发生冲突 | 已有 active Run、移除有 active Run 的成员/Agent、归档有 active Run 的 Project、最后 owner 保护或幂等冲突 |
 | `RUN_NOT_CANCELLABLE` | 409 | 否 | 当前运行已结束，无法取消 | 终态取消 |
 | `JOB_LEASE_INVALID` | 409 | 是 | 任务租约已失效 | Worker 租约不匹配或过期 |
 | `MODEL_TIMEOUT` | 200/SSE | 是 | 模型响应超时，请重试 | Provider 超时 |
@@ -25,6 +25,8 @@
 - 禁止把 Provider 原始错误正文、请求头、密钥或完整用户消息写入响应和普通日志。
 - Worker 将 Provider 错误映射为上述错误码；C++ 只接受白名单错误码。
 - `request_id` 必须原样进入审计事件和错误响应。缺少请求 ID 的 API 调用按 `VALIDATION_FAILED` 处理。
-- 重试必须创建新的 `run_id`；同一用户消息的重复发送通过 `client_request_id` 幂等返回原 `run_id`。
+- 重试必须创建新的 `run_id`；同一发送者的重复消息通过 `(conversation_id, sender_id, client_request_id)` 幂等返回原 `run_id`。
+- 非 Project 成员访问 Project 下任何资源统一返回 403，且不泄露资源是否存在。
+- `target_agent_id` 缺失或格式错误返回 `VALIDATION_FAILED`；目标 Agent 不属于当前 Project 或发送者无 Project 写权限返回 `FORBIDDEN`。
 - Retry 使用 `Idempotency-Key`：同一用户重复使用同一 key 返回第一次创建的 retry `run_id`；不同 key 创建新的 Run。
 - 失败重试不得自动无限循环；Job 默认 `max_attempts=3`，仅可重试错误自动回收。

@@ -1,6 +1,6 @@
 # 基础对话平台任务看板
 
-更新时间：2026-11-13
+更新时间：2026-11-16
 当前版本：V0.1.1
 
 ## 当前任务
@@ -9,7 +9,7 @@
 |---|---|---|---|
 | G00 独立仓与目录骨架 | COORD | DONE | 独立 Git 仓、CMake、目录与 README |
 | G01 冻结契约 | COORD | DONE | OpenAPI 3.1、Proto、SSE、错误码、ADR |
-| G02 数据库 ER 与迁移 | CORE | DONE | ER 图、4 个幂等迁移、空库自动初始化 |
+| G02 数据库 ER 与迁移 | CORE | DONE | ER 图、只增幂等迁移、空库自动初始化 |
 | G03 QA 运行骨架 | QA | DONE | Mock Provider、Compose、运行脚本 |
 | G10 C++ 基础 REST | CORE | DONE | 登录、Agent、会话、消息、权限 |
 | G11 Run/Job 编排与 SSE | CORE | DONE | 事务创建、租约、事件、回放、取消 |
@@ -31,6 +31,7 @@
 | A00 AI 多 Agent 维护契约 | COORD | DONE | `AGENTS.md` V1.1、分支与单写者协议 |
 | A01 GitHub 自动同步 | COORD | DONE | `.agents/skills/github-auto-sync/` |
 | PHASE3-20261113 环境可移植性、生命周期与清理 | CORE/WORKER/QA | DONE | 阶段化启动日志、gRPC Shutdown/join、Docker-first 缓存工具镜像、路径清理；构建/E2E/lease/health PASS |
+| PACKAGE-A-20261116 多人平台基础数据模型与 API 契约 | CORE/COORD | REVIEW | Project/成员/Agent schema、只增迁移、Project-first OpenAPI、契约测试与交接；Docker/PG16/E2E PASS |
 
 ## Gate 结果
 
@@ -44,7 +45,7 @@
 | 任务 | 建议主责 | 状态 | 说明 |
 |---|---|---|---|
 | L2-01 中心化多用户部署 | QA | TODO | HTTPS、账号管理、Worker 扩容、备份 |
-| L2-02 Project / ProjectMember | CORE | TODO | owner/editor/viewer，共享 Agent |
+| L2-02 Project / ProjectMember | CORE | IN_PROGRESS | Package A 契约/迁移完成；owner/editor/viewer runtime 由 B/C 实现 |
 | L2-03 私有 Conversation | CORE/WEB | TODO | 共享 Agent、每人独立会话上下文 |
 | L2-04 会话级 SSE | CORE/WEB | TODO | 共享会话实时同步 |
 | L2-05 Task / Handoff | COORD/CORE | TODO | 第二协作阶段 |

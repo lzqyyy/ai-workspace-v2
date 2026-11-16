@@ -269,7 +269,7 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
         auto msg = s.query(
             "INSERT INTO messages(id,conversation_id,sender_type,sender_id,role,content,status,client_request_id) "
             "VALUES($1,$2,'user',$3,'user',$4,'completed',$5) "
-            "ON CONFLICT (conversation_id,client_request_id) WHERE sender_type='user' AND client_request_id IS NOT NULL "
+            "ON CONFLICT (conversation_id,sender_id,client_request_id) WHERE sender_type='user' AND sender_id IS NOT NULL AND client_request_id IS NOT NULL "
             "DO NOTHING RETURNING id::text,conversation_id::text,seq::text,"
             "sender_type,sender_id::text,role,content,run_id::text,status,"
             "to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')",

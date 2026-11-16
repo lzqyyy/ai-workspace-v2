@@ -132,8 +132,9 @@ queued -> running -> succeeded
 
 ## 5. 安全与可靠性
 
-- 仅运行所有者可订阅；越权返回 `403 FORBIDDEN`，不返回事件。
+- Run 所属 Conversation 的 Project 成员可订阅；viewer 只读。非成员或无角色权限返回 `403 FORBIDDEN`，不返回事件。
 - `Last-Event-ID` 缺失时从 `after` 或 0 开始。
 - 服务端每 15 秒发送注释心跳，反向代理不得缓冲 SSE。
 - 事件先落库后推送；不从 Worker 直达浏览器。
+- 所有 Project 成员读取同一 Run 的事件序列；SSE URL、事件 envelope 和状态机不变。
 - payload 不记录 API Key、Authorization 头或完整敏感提示词到普通日志。

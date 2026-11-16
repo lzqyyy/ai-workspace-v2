@@ -11,6 +11,8 @@ OPENAPI = ROOT / "api" / "openapi.yaml"
 PROTO = ROOT / "proto" / "workspace.proto"
 SSE = ROOT / "docs" / "contracts" / "sse-events.md"
 ERRORS = ROOT / "docs" / "contracts" / "error-codes.md"
+MIGRATIONS_DIR = ROOT / "db" / "migrations"
+MULTIPLAYER_MIGRATION = MIGRATIONS_DIR / "006_multiplayer_foundation.sql"
 
 EXPECTED_PATHS = {
     ("/api/v1/auth/login", "post"),
@@ -24,6 +26,18 @@ EXPECTED_PATHS = {
     ("/api/v1/runs/{run_id}/events", "get"),
     ("/api/v1/runs/{run_id}/cancel", "post"),
     ("/api/v1/health", "get"),
+    ("/api/v1/projects", "post"),
+    ("/api/v1/projects", "get"),
+    ("/api/v1/projects/{project_id}", "get"),
+    ("/api/v1/projects/{project_id}/members", "post"),
+    ("/api/v1/projects/{project_id}/members", "get"),
+    ("/api/v1/projects/{project_id}/members/{user_id}", "patch"),
+    ("/api/v1/projects/{project_id}/members/{user_id}", "delete"),
+    ("/api/v1/projects/{project_id}/agents", "post"),
+    ("/api/v1/projects/{project_id}/agents", "get"),
+    ("/api/v1/projects/{project_id}/agents/{agent_id}", "delete"),
+    ("/api/v1/projects/{project_id}/conversations", "post"),
+    ("/api/v1/projects/{project_id}/conversations", "get"),
 }
 EXPECTED_RPCS = {
     "ClaimNextJob",
@@ -60,8 +74,28 @@ def main() -> int:
     assert any(parameter.get("name") == "Idempotency-Key" for parameter in retry_parameters), "retry idempotency key missing"
 
     schemas = api["components"]["schemas"]
-    for name in ("User", "Agent", "Conversation", "Message", "Run", "Error"):
+    for name in (
+        "User",
+        "Agent",
+        "Conversation",
+        "Message",
+        "Run",
+        "Error",
+        "Project",
+        "ProjectMember",
+        "ProjectAgent",
+    ):
         assert name in schemas, f"missing schema: {name}"
+    assert schemas["ProjectRole"]["enum"] == ["owner", "editor", "viewer"], "Project role enum mismatch"
+
+    for name in (
+        "CreateProjectRequest",
+        "AddProjectMemberRequest",
+        "UpdateProjectMemberRequest",
+        "AddProjectAgentRequest",
+        "CreateProjectConversationRequest",
+    ):
+        assert schemas[name].get("additionalProperties") is False, f"{name} must reject unknown fields"
 
     conditional_bodies = (
         ("/api/v1/auth/login", "post"),
@@ -74,6 +108,10 @@ def main() -> int:
     agent_schema = schemas["CreateAgentRequest"]
     assert agent_schema.get("additionalProperties") is False, "CreateAgentRequest must reject unknown fields"
     assert agent_schema["properties"]["avatar"]["maxLength"] == 500000, "avatar maxLength mismatch"
+
+    send_schema = api["paths"]["/api/v1/conversations/{conversation_id}/messages"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    assert "target_agent_id" in send_schema.get("required", []), "send message must require target_agent_id"
+    assert send_schema["properties"]["target_agent_id"]["format"] == "uuid", "target_agent_id must be a UUID"
 
     run_statuses = set(schemas["Run"]["properties"]["status"]["enum"])
     send_statuses = set(schemas["SendMessageResponse"]["properties"]["status"]["enum"])
@@ -104,8 +142,22 @@ def main() -> int:
     assert not services["postgres"].get("ports"), "PostgreSQL must not publish a host port"
     assert not services["worker"].get("ports"), "Worker must not publish a host port"
     assert services["core"].get("ports") == ["8080:8080"], "Only Core 8080 may be published"
-    migrations = sorted((ROOT / "db" / "migrations").glob("*.sql"))
+
+    migrations = sorted(MIGRATIONS_DIR.glob("*.sql"))
     assert migrations, "database migrations are missing"
+    assert MULTIPLAYER_MIGRATION in migrations, "multiplayer foundation migration missing"
+    migration_text = MULTIPLAYER_MIGRATION.read_text(encoding="utf-8")
+    for table in ("projects", "project_members", "project_agents"):
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in migration_text, f"missing migration table: {table}"
+    normalized_migration = " ".join(migration_text.split())
+    assert "ON messages(conversation_id, sender_id, client_request_id)" in normalized_migration, (
+        "client request idempotency scope mismatch"
+    )
+    assert "DROP INDEX IF EXISTS ux_messages_client_request" in normalized_migration, (
+        "legacy client request index must be replaced"
+    )
+    assert "project_id SET NOT NULL" not in normalized_migration, "project_id NOT NULL must remain deferred"
+
     text_corpus = "\n".join(p.read_text(encoding="utf-8") for p in [OPENAPI, PROTO, SSE, ERRORS])
     assert "sk-" not in text_corpus, "possible API key entered the contract tree"
     print("contract validation: PASS")

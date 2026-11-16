@@ -44,15 +44,20 @@ public:
     void removeProjectAgent(const std::string& user_id, const std::string& project_id, const std::string& agent_id,
                             const std::string& request_id);
     Json listConversations(const std::string& user_id, const std::string& request_id);
+    Json listProjectConversations(const std::string& user_id, const std::string& project_id,
+                                  const std::string& request_id);
     Json createConversation(const std::string& user_id, const Json& body, const std::string& request_id);
+    Json createProjectConversation(const std::string& user_id, const std::string& project_id, const Json& body,
+                                   const std::string& request_id);
     Json listMessages(const std::string& user_id, const std::string& conversation_id, long long after_seq, const std::string& request_id);
     Json sendMessage(const std::string& user_id, const std::string& conversation_id, const Json& body,
                      const std::string& client_request_id, const std::string& request_id);
     Json retryRun(const std::string& user_id, const std::string& run_id, const std::string& idempotency_key,
                   const std::string& request_id);
     Json cancelRun(const std::string& user_id, const std::string& run_id, const std::string& request_id);
-    Json getRun(const std::string& user_id, const std::string& run_id);
-    Json listRunEvents(const std::string& user_id, const std::string& run_id, long long after_seq);
+    Json getRun(const std::string& user_id, const std::string& run_id, const std::string& request_id);
+    Json listRunEvents(const std::string& user_id, const std::string& run_id, long long after_seq,
+                       const std::string& request_id);
     Json health();
 
     Json claimNextJob(const std::string& worker_id, const std::string& request_id);
@@ -79,6 +84,9 @@ private:
     std::string requireProjectRole(PgSession& session, const std::string& project_id, const std::string& user_id,
                                    std::initializer_list<std::string_view> allowed, bool lock_project,
                                    const std::string& attempted_action, const std::string& request_id);
+    std::string requireProjectAgent(PgSession& session, const std::string& project_id, const std::string& agent_id,
+                                    const std::string& user_id, const std::string& attempted_action,
+                                    const std::string& request_id);
     static void require_uuid(const std::string& value, const std::string& field);
     static void require_text(const std::string& value, const std::string& field, std::size_t max_length);
     static bool retryable_error(const std::string& error_code);

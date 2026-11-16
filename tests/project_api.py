@@ -29,9 +29,27 @@ def main() -> int:
     fixture_user_id = os.environ.get("PROJECT_RUN_FIXTURE_USER_ID")
     fixture_agent_id = os.environ.get("PROJECT_RUN_FIXTURE_AGENT_ID")
     fixture_run_id = os.environ.get("PROJECT_RUN_FIXTURE_RUN_ID")
+    fixture_conversation_id = os.environ.get("PROJECT_RUN_FIXTURE_CONVERSATION_ID")
     if all((fixture_project_id, fixture_user_id, fixture_agent_id, fixture_run_id)):
         expect_error(owner, "DELETE", f"/api/v1/projects/{fixture_project_id}/members/{fixture_user_id}", 409, "CONFLICT")
         expect_error(owner, "DELETE", f"/api/v1/projects/{fixture_project_id}/agents/{fixture_agent_id}", 409, "CONFLICT")
+        if fixture_conversation_id:
+            expect_error(
+                owner,
+                "POST",
+                f"/api/v1/conversations/{fixture_conversation_id}/messages",
+                400,
+                "VALIDATION_FAILED",
+                {"content": "missing target agent"},
+            )
+            expect_error(
+                owner,
+                "POST",
+                f"/api/v1/conversations/{fixture_conversation_id}/messages",
+                409,
+                "CONFLICT",
+                {"content": "active run blocks send", "client_request_id": f"project-active-{uuid.uuid4()}", "target_agent_id": fixture_agent_id},
+            )
         owner.request("POST", f"/api/v1/runs/{fixture_run_id}/cancel")
         assert owner.request("DELETE", f"/api/v1/projects/{fixture_project_id}/agents/{fixture_agent_id}") is None
         assert owner.request("DELETE", f"/api/v1/projects/{fixture_project_id}/members/{fixture_user_id}") is None

@@ -83,6 +83,18 @@ Json project_agent_json(PgResult& r, int row)
                                        {"provider_type", r.get(row, 11)}, {"model_name", r.get(row, 12)}}}}}};
 }
 
+const char* kConversationColumns =
+    "c.id::text, c.project_id::text, c.owner_id::text, c.agent_id::text, a.name, c.title, c.status, "
+    "to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'), "
+    "to_char(c.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')";
+
+Json conversation_json(PgResult& r, int row)
+{
+    return {{"id", r.get(row, 0)}, {"project_id", r.get(row, 1)}, {"owner_id", r.get(row, 2)},
+            {"agent_id", r.get(row, 3)}, {"agent_name", r.get(row, 4)}, {"title", r.get(row, 5)},
+            {"status", r.get(row, 6)}, {"created_at", r.get(row, 7)}, {"updated_at", r.get(row, 8)}};
+}
+
 void require_project_role_value(const std::string& role)
 {
     if (role != "owner" && role != "editor" && role != "viewer")
@@ -178,6 +190,23 @@ std::string CoreService::requireProjectRole(PgSession& session, const std::strin
         throw ServiceError(403, "FORBIDDEN", "project role does not permit this action");
     }
     return role;
+}
+
+std::string CoreService::requireProjectAgent(PgSession& session, const std::string& project_id,
+                                             const std::string& agent_id, const std::string& user_id,
+                                             const std::string& attempted_action, const std::string& request_id)
+{
+    auto r = session.query(
+        "SELECT a.model_provider_id::text FROM project_agents pa "
+        "JOIN agents a ON a.id=pa.agent_id "
+        "JOIN project_members owner_pm ON owner_pm.project_id=pa.project_id AND owner_pm.user_id=a.owner_id "
+        "WHERE pa.project_id=$1 AND pa.agent_id=$2 AND a.status='active'",
+        {project_id, agent_id});
+    if (r.rows() != 1) {
+        auditDenied(user_id, attempted_action, project_id, request_id);
+        throw ServiceError(403, "FORBIDDEN", "target agent is not active in this project");
+    }
+    return r.get(0, 0);
 }
 
 Json CoreService::login(const std::string& username, const std::string& password, const std::string& request_id)
@@ -571,16 +600,30 @@ Json CoreService::listConversations(const std::string& user_id, const std::strin
 {
     auto s = db_.session();
     auto r = s.query(
-        "SELECT c.id::text,c.agent_id::text,a.name,c.project_id::text,c.title,c.status,"
-        "to_char(c.created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),"
-        "to_char(c.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') "
-        "FROM conversations c JOIN agents a ON a.id=c.agent_id WHERE c.owner_id=$1 ORDER BY c.updated_at DESC", {user_id});
+        std::string("SELECT ") + kConversationColumns +
+            " FROM conversations c JOIN agents a ON a.id=c.agent_id "
+            "JOIN project_members pm ON pm.project_id=c.project_id "
+            "WHERE pm.user_id=$1 ORDER BY c.updated_at DESC, c.id",
+        {user_id});
     Json items = Json::array();
-    for (int row = 0; row < r.rows(); ++row) {
-        items.push_back({{"id", r.get(row, 0)}, {"agent_id", r.get(row, 1)}, {"agent_name", r.get(row, 2)},
-                         {"project_id", r.get(row, 3)}, {"title", r.get(row, 4)}, {"status", r.get(row, 5)},
-                         {"created_at", r.get(row, 6)}, {"updated_at", r.get(row, 7)}});
-    }
+    for (int row = 0; row < r.rows(); ++row) items.push_back(conversation_json(r, row));
+    return {{"items", items}};
+}
+
+Json CoreService::listProjectConversations(const std::string& user_id, const std::string& project_id,
+                                           const std::string& request_id)
+{
+    require_uuid(project_id, "project_id");
+    auto s = db_.session();
+    requireProjectRole(s, project_id, user_id, {"owner", "editor", "viewer"}, false,
+                       "conversation.list", request_id);
+    auto r = s.query(
+        std::string("SELECT ") + kConversationColumns +
+            " FROM conversations c JOIN agents a ON a.id=c.agent_id "
+            "WHERE c.project_id=$1 ORDER BY c.updated_at DESC, c.id",
+        {project_id});
+    Json items = Json::array();
+    for (int row = 0; row < r.rows(); ++row) items.push_back(conversation_json(r, row));
     return {{"items", items}};
 }
 
@@ -592,24 +635,65 @@ Json CoreService::createConversation(const std::string& user_id, const Json& bod
     std::string title = json_string(body, "title");
     if (trim(title).empty()) title = "New conversation";
     require_text(title, "title", 200);
+
     auto s = db_.session();
-    auto agent = s.query("SELECT id::text,name FROM agents WHERE id=$1 AND owner_id=$2 AND status='active'", {agent_id, user_id});
+    auto agent = s.query("SELECT id::text FROM agents WHERE id=$1 AND owner_id=$2 AND status='active'",
+                         {agent_id, user_id});
     if (agent.rows() != 1) throw ServiceError(403, "FORBIDDEN", "agent is not accessible");
     const std::string id = uuid4();
     s.begin();
     try {
         const std::string project_id = ensure_legacy_project(s, user_id, agent_id);
-        auto r = s.query(
-            "INSERT INTO conversations(id,owner_id,agent_id,project_id,title) VALUES($1,$2,$3,$4,$5) RETURNING id::text,"
-            "to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),"
-            "to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')",
+        s.query(
+            "INSERT INTO conversations(id,owner_id,agent_id,project_id,title) VALUES($1,$2,$3,$4,$5)",
             {id, user_id, agent_id, project_id, title});
+        auto conversation = s.query(
+            std::string("SELECT ") + kConversationColumns +
+                " FROM conversations c JOIN agents a ON a.id=c.agent_id WHERE c.id=$1",
+            {id});
         audit(s, "user", user_id, "conversation.create", "conversation", id, "success", request_id,
-              {{"project_id", project_id}});
+              {{"project_id", project_id}, {"agent_id", agent_id}});
         s.commit();
-        return {{"id", r.get(0, 0)}, {"project_id", project_id}, {"agent_id", agent_id},
-                {"agent_name", agent.get(0, 1)}, {"title", title}, {"status", "active"},
-                {"created_at", r.get(0, 1)}, {"updated_at", r.get(0, 2)}};
+        return conversation_json(conversation, 0);
+    } catch (...) {
+        s.rollback();
+        throw;
+    }
+}
+
+Json CoreService::createProjectConversation(const std::string& user_id, const std::string& project_id,
+                                            const Json& body, const std::string& request_id)
+{
+    require_allowed_fields(body, {"agent_id", "title"});
+    const std::string agent_id = json_string(body, "agent_id");
+    require_uuid(project_id, "project_id");
+    require_uuid(agent_id, "agent_id");
+    std::string title = json_string(body, "title");
+    if (trim(title).empty()) title = "New conversation";
+    require_text(title, "title", 200);
+
+    auto s = db_.session();
+    s.begin();
+    try {
+        const std::string role = requireProjectRole(s, project_id, user_id, {"owner", "editor"}, true,
+                                                     "conversation.create", request_id);
+        auto project = s.query("SELECT status FROM projects WHERE id=$1", {project_id});
+        if (project.rows() != 1 || project.get(0, 0) != "active")
+            throw ServiceError(409, "CONFLICT", "project is archived");
+        (void)requireProjectAgent(s, project_id, agent_id, user_id, "conversation.create", request_id);
+
+        const std::string id = uuid4();
+        s.query(
+            "INSERT INTO conversations(id,owner_id,agent_id,project_id,title) VALUES($1,$2,$3,$4,$5)",
+            {id, user_id, agent_id, project_id, title});
+        auto conversation = s.query(
+            std::string("SELECT ") + kConversationColumns +
+                " FROM conversations c JOIN agents a ON a.id=c.agent_id WHERE c.id=$1",
+            {id});
+        audit(s, "user", user_id, "conversation.create", "conversation", id, "success", request_id,
+              {{"project_id", project_id}, {"agent_id", agent_id}, {"role", role}});
+        s.commit();
+        return conversation_json(conversation, 0);
     } catch (...) {
         s.rollback();
         throw;
@@ -617,12 +701,14 @@ Json CoreService::createConversation(const std::string& user_id, const Json& bod
 }
 
 Json CoreService::listMessages(const std::string& user_id, const std::string& conversation_id,
-                               long long after_seq, const std::string&)
+                               long long after_seq, const std::string& request_id)
 {
     require_uuid(conversation_id, "conversation_id");
     auto s = db_.session();
-    auto owner = s.query("SELECT 1 FROM conversations WHERE id=$1 AND owner_id=$2", {conversation_id, user_id});
-    if (owner.rows() != 1) throw ServiceError(403, "FORBIDDEN", "conversation is not accessible");
+    auto conversation = s.query("SELECT project_id::text FROM conversations WHERE id=$1", {conversation_id});
+    if (conversation.rows() != 1) throw ServiceError(403, "FORBIDDEN", "conversation is not accessible");
+    requireProjectRole(s, conversation.get(0, 0), user_id, {"owner", "editor", "viewer"}, false,
+                       "message.list", request_id);
     auto r = s.query(std::string("SELECT ") + kMessageColumns +
                          " FROM messages m WHERE m.conversation_id=$1 AND m.seq>$2 ORDER BY m.seq",
                      {conversation_id, std::to_string(after_seq)});
@@ -634,57 +720,95 @@ Json CoreService::listMessages(const std::string& user_id, const std::string& co
 Json CoreService::sendMessage(const std::string& user_id, const std::string& conversation_id, const Json& body,
                               const std::string& client_request_id, const std::string& request_id)
 {
-    require_allowed_fields(body, {"content", "client_request_id"});
+    require_allowed_fields(body, {"content", "client_request_id", "target_agent_id"});
     require_uuid(conversation_id, "conversation_id");
     const std::string content = json_string(body, "content");
+    const std::string target_agent_id = json_string(body, "target_agent_id");
     require_text(content, "content", 32000);
+    require_uuid(target_agent_id, "target_agent_id");
     if (!client_request_id.empty() && (client_request_id.size() < 8 || client_request_id.size() > 100))
         throw ServiceError(400, "VALIDATION_FAILED", "client_request_id must be 8-100 characters");
+
     auto s = db_.session();
-    const std::string duplicate_sql = std::string("SELECT ") + kMessageColumns + ",r.id::text,r.status FROM messages m "
-        "JOIN conversations c ON c.id=m.conversation_id JOIN runs r ON r.trigger_message_id=m.id "
-        "WHERE c.owner_id=$1 AND m.conversation_id=$2 AND m.client_request_id=$3 AND m.sender_type='user' LIMIT 1";
-    auto duplicate_json = [](PgResult& existing) {
-        return Json{{"message", message_json(existing, 0)}, {"run_id", existing.get(0, 10)},
-                    {"status", existing.get(0, 11)}, {"events_url", "/api/v1/runs/" + existing.get(0, 10) + "/events"},
-                    {"duplicate", true}};
-    };
-    if (!client_request_id.empty()) {
-        auto existing = s.query(duplicate_sql, {user_id, conversation_id, client_request_id});
-        if (existing.rows() == 1) return duplicate_json(existing);
-    }
-    auto conversation = s.query(
-        "SELECT c.agent_id::text,a.model_provider_id::text FROM conversations c JOIN agents a ON a.id=c.agent_id "
-        "WHERE c.id=$1 AND c.owner_id=$2 AND c.status='active' AND a.status='active'", {conversation_id, user_id});
-    if (conversation.rows() != 1) throw ServiceError(403, "FORBIDDEN", "conversation is not accessible");
-    const std::string message_id = uuid4();
-    const std::string run_id = uuid4();
-    const std::string job_id = uuid4();
     s.begin();
     try {
+        const std::string duplicate_sql = std::string("SELECT ") + kMessageColumns +
+            ",r.id::text,r.status FROM messages m JOIN runs r ON r.trigger_message_id=m.id "
+            "WHERE m.conversation_id=$1 AND m.sender_id=$2 AND m.client_request_id=$3 "
+            "AND m.sender_type='user' LIMIT 1";
+        auto duplicate_json = [](PgResult& existing) {
+            return Json{{"message", message_json(existing, 0)}, {"run_id", existing.get(0, 10)},
+                        {"status", existing.get(0, 11)},
+                        {"events_url", "/api/v1/runs/" + existing.get(0, 10) + "/events"},
+                        {"duplicate", true}};
+        };
+
+        auto conversation_project = s.query("SELECT project_id::text FROM conversations WHERE id=$1",
+                                            {conversation_id});
+        if (conversation_project.rows() != 1)
+            throw ServiceError(403, "FORBIDDEN", "conversation is not accessible");
+        const std::string project_id = conversation_project.get(0, 0);
+        // ponytail: project row lock serializes conversation writes with member/agent removal;
+        // narrow to per-conversation locks if project-level write throughput becomes a problem.
+        const std::string role = requireProjectRole(s, project_id, user_id, {"owner", "editor"}, true,
+                                                     "message.send", request_id);
+        auto project = s.query("SELECT status FROM projects WHERE id=$1", {project_id});
+        if (project.rows() != 1 || project.get(0, 0) != "active")
+            throw ServiceError(409, "CONFLICT", "project is archived");
+        auto conversation = s.query(
+            "SELECT status FROM conversations WHERE id=$1 AND project_id=$2 FOR UPDATE",
+            {conversation_id, project_id});
+        if (conversation.rows() != 1)
+            throw ServiceError(403, "FORBIDDEN", "conversation is not accessible");
+        if (conversation.get(0, 0) != "active")
+            throw ServiceError(409, "CONFLICT", "conversation is archived");
+
+        if (!client_request_id.empty()) {
+            auto existing = s.query(duplicate_sql, {conversation_id, user_id, client_request_id});
+            if (existing.rows() == 1) {
+                s.commit();
+                return duplicate_json(existing);
+            }
+        }
+
+        const std::string provider_id = requireProjectAgent(
+            s, project_id, target_agent_id, user_id, "message.send", request_id);
+        auto active = s.query(
+            "SELECT 1 FROM runs WHERE conversation_id=$1 AND status IN ('queued','running') LIMIT 1",
+            {conversation_id});
+        if (active.rows() == 1)
+            throw ServiceError(409, "CONFLICT", "conversation already has an active run");
+
+        const std::string message_id = uuid4();
+        const std::string run_id = uuid4();
+        const std::string job_id = uuid4();
         auto msg = s.query(
             "INSERT INTO messages(id,conversation_id,sender_type,sender_id,role,content,status,client_request_id) "
             "VALUES($1,$2,'user',$3,'user',$4,'completed',$5) "
-            "ON CONFLICT (conversation_id,sender_id,client_request_id) WHERE sender_type='user' AND sender_id IS NOT NULL AND client_request_id IS NOT NULL "
+            "ON CONFLICT (conversation_id,sender_id,client_request_id) "
+            "WHERE sender_type='user' AND sender_id IS NOT NULL AND client_request_id IS NOT NULL "
             "DO NOTHING RETURNING id::text,conversation_id::text,seq::text,"
             "sender_type,sender_id::text,role,content,run_id::text,status,"
             "to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')",
             {message_id, conversation_id, user_id, content,
              client_request_id.empty() ? std::nullopt : std::optional<std::string>(client_request_id)});
         if (msg.rows() == 0) {
-            auto existing = s.query(duplicate_sql, {user_id, conversation_id, client_request_id});
-            if (existing.rows() != 1) throw ServiceError(500, "INTERNAL", "duplicate message is unavailable", true);
+            auto existing = s.query(duplicate_sql, {conversation_id, user_id, client_request_id});
+            if (existing.rows() != 1)
+                throw ServiceError(500, "INTERNAL", "duplicate message is unavailable", true);
             s.commit();
             return duplicate_json(existing);
         }
         s.query("INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status) "
                 "VALUES($1,$2,$3,$4,$5,'queued')",
-                {run_id, conversation_id, conversation.get(0, 0), message_id, conversation.get(0, 1)});
+                {run_id, conversation_id, target_agent_id, message_id, provider_id});
         s.query("UPDATE messages SET run_id=$1 WHERE id=$2", {run_id, message_id});
         s.query("INSERT INTO jobs(id,run_id,status) VALUES($1,$2,'queued')", {job_id, run_id});
         s.query("UPDATE conversations SET updated_at=now() WHERE id=$1", {conversation_id});
         audit(s, "user", user_id, "message.send", "run", run_id, "success", request_id,
-              {{"conversation_id", conversation_id}});
+              {{"conversation_id", conversation_id}, {"agent_id", target_agent_id}, {"role", role}});
+        audit(s, "user", user_id, "run.start", "run", run_id, "success", request_id,
+              {{"conversation_id", conversation_id}, {"agent_id", target_agent_id}});
         s.commit();
         Json message = message_json(msg, 0);
         message["run_id"] = run_id;
@@ -695,65 +819,115 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
         throw;
     }
 }
+
 Json CoreService::retryRun(const std::string& user_id, const std::string& run_id,
                             const std::string& idempotency_key, const std::string& request_id)
 {
     require_uuid(run_id, "run_id");
     if (!idempotency_key.empty() && (idempotency_key.size() < 8 || idempotency_key.size() > 100))
         throw ServiceError(400, "VALIDATION_FAILED", "Idempotency-Key must be 8-100 characters");
+
     auto s = db_.session();
-    auto old = s.query(
-        "SELECT r.conversation_id::text,r.agent_id::text,r.trigger_message_id::text,r.model_provider_id::text,r.status "
-        "FROM runs r JOIN conversations c ON c.id=r.conversation_id WHERE r.id=$1 AND c.owner_id=$2", {run_id, user_id});
-    if (old.rows() != 1) throw ServiceError(403, "FORBIDDEN", "run is not accessible");
-
-    auto duplicate_response = [&](PgSession& session) {
-        auto existing = session.query(
-            "SELECT r.id::text,r.status,r.trigger_message_id::text FROM retry_idempotency i "
-            "JOIN runs r ON r.id=i.run_id JOIN conversations c ON c.id=r.conversation_id "
-            "WHERE i.user_id=$1 AND i.operation='retry_run' AND i.key=$2 AND c.owner_id=$1",
-            {user_id, idempotency_key});
-        if (existing.rows() != 1)
-            throw ServiceError(409, "CONFLICT", "idempotency key is already in use");
-        auto msg = session.query(std::string("SELECT ") + kMessageColumns + " FROM messages m WHERE m.id=$1",
-                                 {existing.get(0, 2)});
-        if (msg.rows() != 1) throw ServiceError(500, "INTERNAL", "retry source message is unavailable", true);
-        Json message = message_json(msg, 0);
-        message["run_id"] = existing.get(0, 0);
-        return Json{{"message", message}, {"run_id", existing.get(0, 0)}, {"status", existing.get(0, 1)},
-                    {"events_url", "/api/v1/runs/" + existing.get(0, 0) + "/events"}, {"duplicate", true}};
-    };
-
-    if (!idempotency_key.empty()) {
-        auto existing = s.query(
-            "SELECT 1 FROM retry_idempotency WHERE user_id=$1 AND operation='retry_run' AND key=$2",
-            {user_id, idempotency_key});
-        if (existing.rows() == 1) return duplicate_response(s);
-    }
-    if (old.get(0, 4) != "failed" && old.get(0, 4) != "cancelled")
-        throw ServiceError(409, "CONFLICT", "only failed or cancelled runs can be retried");
-
-    const std::string new_run_id = uuid4();
-    const std::string job_id = uuid4();
     s.begin();
     try {
+        auto initial = s.query(
+            "SELECT c.project_id::text,c.id::text,m.sender_id::text FROM runs r "
+            "JOIN conversations c ON c.id=r.conversation_id "
+            "JOIN messages m ON m.id=r.trigger_message_id WHERE r.id=$1",
+            {run_id});
+        if (initial.rows() != 1)
+            throw ServiceError(403, "FORBIDDEN", "run is not accessible");
+        const std::string project_id = initial.get(0, 0);
+        const std::string conversation_id = initial.get(0, 1);
+        const std::string role = requireProjectRole(s, project_id, user_id, {"owner", "editor"}, true,
+                                                     "run.retry", request_id);
+        auto project = s.query("SELECT status FROM projects WHERE id=$1", {project_id});
+        if (project.rows() != 1 || project.get(0, 0) != "active")
+            throw ServiceError(409, "CONFLICT", "project is archived");
+        auto conversation = s.query(
+            "SELECT status FROM conversations WHERE id=$1 AND project_id=$2 FOR UPDATE",
+            {conversation_id, project_id});
+        if (conversation.rows() != 1)
+            throw ServiceError(403, "FORBIDDEN", "conversation is not accessible");
+        if (conversation.get(0, 0) != "active")
+            throw ServiceError(409, "CONFLICT", "conversation is archived");
+
+        auto old = s.query(
+            "SELECT r.agent_id::text,r.model_provider_id::text,r.trigger_message_id::text,r.status,"
+            "m.sender_id::text FROM runs r JOIN messages m ON m.id=r.trigger_message_id "
+            "WHERE r.id=$1 AND r.conversation_id=$2 FOR UPDATE OF r",
+            {run_id, conversation_id});
+        if (old.rows() != 1)
+            throw ServiceError(403, "FORBIDDEN", "run is not accessible");
+        if (role == "editor" && old.get(0, 4) != user_id) {
+            auditDenied(user_id, "run.retry", project_id, request_id, role);
+            throw ServiceError(403, "FORBIDDEN", "editors may only retry their own runs");
+        }
+
+        auto duplicate_response = [&](PgSession& session) {
+            auto existing = session.query(
+                "SELECT r.id::text,r.status,r.trigger_message_id::text FROM retry_idempotency i "
+                "JOIN runs r ON r.id=i.run_id "
+                "WHERE i.user_id=$1 AND i.operation='retry_run' AND i.key=$2",
+                {user_id, idempotency_key});
+            if (existing.rows() != 1)
+                throw ServiceError(409, "CONFLICT", "idempotency key is already in use");
+            auto msg = session.query(std::string("SELECT ") + kMessageColumns +
+                                         " FROM messages m WHERE m.id=$1",
+                                     {existing.get(0, 2)});
+            if (msg.rows() != 1)
+                throw ServiceError(500, "INTERNAL", "retry source message is unavailable", true);
+            Json message = message_json(msg, 0);
+            message["run_id"] = existing.get(0, 0);
+            return Json{{"message", message}, {"run_id", existing.get(0, 0)}, {"status", existing.get(0, 1)},
+                        {"events_url", "/api/v1/runs/" + existing.get(0, 0) + "/events"},
+                        {"duplicate", true}};
+        };
+
+        if (!idempotency_key.empty()) {
+            auto existing = s.query(
+                "SELECT 1 FROM retry_idempotency WHERE user_id=$1 AND operation='retry_run' AND key=$2",
+                {user_id, idempotency_key});
+            if (existing.rows() == 1) {
+                auto response = duplicate_response(s);
+                s.commit();
+                return response;
+            }
+        }
+        if (old.get(0, 3) != "failed" && old.get(0, 3) != "cancelled")
+            throw ServiceError(409, "CONFLICT", "only failed or cancelled runs can be retried");
+
+        const std::string provider_id = requireProjectAgent(
+            s, project_id, old.get(0, 0), user_id, "run.retry", request_id);
+        auto active = s.query(
+            "SELECT 1 FROM runs WHERE conversation_id=$1 AND status IN ('queued','running') LIMIT 1",
+            {conversation_id});
+        if (active.rows() == 1)
+            throw ServiceError(409, "CONFLICT", "conversation already has an active run");
+
+        const std::string new_run_id = uuid4();
+        const std::string job_id = uuid4();
         s.query("INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status) "
                 "VALUES($1,$2,$3,$4,$5,'queued')",
-                {new_run_id, old.get(0, 0), old.get(0, 1), old.get(0, 2), old.get(0, 3)});
+                {new_run_id, conversation_id, old.get(0, 0), old.get(0, 2), provider_id});
         s.query("INSERT INTO jobs(id,run_id,status) VALUES($1,$2,'queued')", {job_id, new_run_id});
         if (!idempotency_key.empty()) {
             auto claimed = s.query(
                 "INSERT INTO retry_idempotency(user_id,operation,key,run_id,source_run_id) "
-                "VALUES($1,'retry_run',$2,$3,$4) ON CONFLICT (user_id,operation,key) DO NOTHING RETURNING run_id::text",
+                "VALUES($1,'retry_run',$2,$3,$4) ON CONFLICT (user_id,operation,key) DO NOTHING "
+                "RETURNING run_id::text",
                 {user_id, idempotency_key, new_run_id, run_id});
             if (claimed.rows() == 0) {
                 s.rollback();
                 return duplicate_response(s);
             }
         }
-        s.query("UPDATE conversations SET updated_at=now() WHERE id=$1", {old.get(0, 0)});
-        audit(s, "user", user_id, "run.retry", "run", new_run_id, "success", request_id, {{"source_run_id", run_id}});
-        auto msg = s.query(std::string("SELECT ") + kMessageColumns + " FROM messages m WHERE m.id=$1", {old.get(0, 2)});
+        s.query("UPDATE conversations SET updated_at=now() WHERE id=$1", {conversation_id});
+        audit(s, "user", user_id, "run.retry", "run", new_run_id, "success", request_id,
+              {{"source_run_id", run_id}, {"conversation_id", conversation_id},
+               {"agent_id", old.get(0, 0)}, {"role", role}});
+        auto msg = s.query(std::string("SELECT ") + kMessageColumns + " FROM messages m WHERE m.id=$1",
+                           {old.get(0, 2)});
         s.commit();
         Json message = message_json(msg, 0);
         message["run_id"] = new_run_id;
@@ -771,55 +945,94 @@ Json CoreService::cancelRun(const std::string& user_id, const std::string& run_i
     auto s = db_.session();
     s.begin();
     try {
-        auto r = s.query("SELECT " + std::string(kRunColumns) + ",j.status FROM runs r JOIN conversations c ON c.id=r.conversation_id "
-                         "JOIN jobs j ON j.run_id=r.id WHERE r.id=$1 AND c.owner_id=$2 FOR UPDATE OF r,j",
-                         {run_id, user_id});
-        if (r.rows() != 1) throw ServiceError(403, "FORBIDDEN", "run is not accessible");
+        auto access = s.query(
+            "SELECT c.project_id::text FROM runs r JOIN conversations c ON c.id=r.conversation_id "
+            "WHERE r.id=$1",
+            {run_id});
+        if (access.rows() != 1)
+            throw ServiceError(403, "FORBIDDEN", "run is not accessible");
+        const std::string project_id = access.get(0, 0);
+        const std::string role = requireProjectRole(s, project_id, user_id, {"owner", "editor"}, true,
+                                                     "run.cancel", request_id);
+        auto r = s.query(
+            std::string("SELECT ") + kRunColumns +
+                ",j.status,m.sender_id::text FROM runs r "
+                "JOIN conversations c ON c.id=r.conversation_id "
+                "JOIN jobs j ON j.run_id=r.id "
+                "JOIN messages m ON m.id=r.trigger_message_id "
+                "WHERE r.id=$1 AND c.project_id=$2 FOR UPDATE OF r,j",
+            {run_id, project_id});
+        if (r.rows() != 1)
+            throw ServiceError(403, "FORBIDDEN", "run is not accessible");
+        if (role == "editor" && r.get(0, 9) != user_id) {
+            auditDenied(user_id, "run.cancel", project_id, request_id, role);
+            throw ServiceError(403, "FORBIDDEN", "editors may only cancel their own runs");
+        }
         const std::string status = r.get(0, 2);
         if (status == "succeeded" || status == "failed" || status == "cancelled")
             throw ServiceError(409, "RUN_NOT_CANCELLABLE", "run is already terminal");
         if (r.get(0, 8) == "queued") {
             const std::string next_seq = std::to_string(std::stoll(s.query(
-                "SELECT COALESCE(MAX(seq),0)+1 FROM run_events WHERE run_id=$1", {run_id}).get(0, 0)) );
-            s.query("UPDATE jobs SET status='cancelled',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE run_id=$1", {run_id});
-            s.query("UPDATE runs SET status='cancelled',error_code='RUN_CANCELLED',cancel_requested=true,finished_at=now() WHERE id=$1", {run_id});
+                "SELECT COALESCE(MAX(seq),0)+1 FROM run_events WHERE run_id=$1", {run_id}).get(0, 0)));
+            s.query("UPDATE jobs SET status='cancelled',lease_token=NULL,lease_until=NULL,updated_at=now() "
+                    "WHERE run_id=$1", {run_id});
+            s.query("UPDATE runs SET status='cancelled',error_code='RUN_CANCELLED',cancel_requested=true,"
+                    "finished_at=now() WHERE id=$1", {run_id});
             s.query("INSERT INTO run_events(run_id,seq,event_type,payload_jsonb,request_id) "
                     "VALUES($1,$2,'run.cancelled',$3::jsonb,$4) ON CONFLICT (run_id,event_type) "
-                    "WHERE event_type IN ('run.started','message.completed','run.failed','run.cancelled') DO NOTHING",
+                    "WHERE event_type IN ('run.started','message.completed','run.failed','run.cancelled') "
+                    "DO NOTHING",
                     {run_id, next_seq, Json{{"reason", "user_requested"}}.dump(), request_id});
         } else {
             s.query("UPDATE runs SET cancel_requested=true WHERE id=$1", {run_id});
         }
-        audit(s, "user", user_id, "run.cancel", "run", run_id, "success", request_id);
+        audit(s, "user", user_id, "run.cancel", "run", run_id, "success", request_id,
+              {{"project_id", project_id}, {"role", role}});
         s.commit();
     } catch (...) {
         s.rollback();
         throw;
     }
-    return getRun(user_id, run_id);
+    return getRun(user_id, run_id, request_id);
 }
 
-Json CoreService::getRun(const std::string& user_id, const std::string& run_id)
+Json CoreService::getRun(const std::string& user_id, const std::string& run_id,
+                         const std::string& request_id)
 {
     require_uuid(run_id, "run_id");
     auto s = db_.session();
-    auto r = s.query(std::string("SELECT ") + kRunColumns + " FROM runs r JOIN conversations c ON c.id=r.conversation_id "
-                     "WHERE r.id=$1 AND c.owner_id=$2", {run_id, user_id});
-    if (r.rows() != 1) throw ServiceError(403, "FORBIDDEN", "run is not accessible");
+    auto access = s.query(
+        "SELECT c.project_id::text FROM runs r JOIN conversations c ON c.id=r.conversation_id "
+        "WHERE r.id=$1",
+        {run_id});
+    if (access.rows() != 1)
+        throw ServiceError(403, "FORBIDDEN", "run is not accessible");
+    requireProjectRole(s, access.get(0, 0), user_id, {"owner", "editor", "viewer"}, false,
+                       "run.read", request_id);
+    auto r = s.query(std::string("SELECT ") + kRunColumns + " FROM runs r WHERE r.id=$1", {run_id});
+    if (r.rows() != 1)
+        throw ServiceError(403, "FORBIDDEN", "run is not accessible");
     return run_json(r, 0);
 }
 
-Json CoreService::listRunEvents(const std::string& user_id, const std::string& run_id, long long after_seq)
+Json CoreService::listRunEvents(const std::string& user_id, const std::string& run_id, long long after_seq,
+                                const std::string& request_id)
 {
     require_uuid(run_id, "run_id");
     auto s = db_.session();
-    auto access = s.query("SELECT 1 FROM runs r JOIN conversations c ON c.id=r.conversation_id "
-                          "WHERE r.id=$1 AND c.owner_id=$2", {run_id, user_id});
-    if (access.rows() != 1) throw ServiceError(403, "FORBIDDEN", "run is not accessible");
+    auto access = s.query(
+        "SELECT c.project_id::text FROM runs r JOIN conversations c ON c.id=r.conversation_id "
+        "WHERE r.id=$1",
+        {run_id});
+    if (access.rows() != 1)
+        throw ServiceError(403, "FORBIDDEN", "run is not accessible");
+    requireProjectRole(s, access.get(0, 0), user_id, {"owner", "editor", "viewer"}, false,
+                       "run.events", request_id);
     auto r = s.query(
         "SELECT seq::text,event_type,payload_jsonb::text,request_id,"
         "to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') "
-        "FROM run_events WHERE run_id=$1 AND seq>$2 ORDER BY run_events.seq", {run_id, std::to_string(after_seq)});
+        "FROM run_events WHERE run_id=$1 AND seq>$2 ORDER BY run_events.seq",
+        {run_id, std::to_string(after_seq)});
     Json items = Json::array();
     for (int row = 0; row < r.rows(); ++row) {
         Json payload = Json::parse(r.get(row, 2));
@@ -1102,16 +1315,26 @@ std::pair<bool, std::string> CoreService::checkPermission(const std::string& act
     auto s = db_.session();
     PgResult r;
     if (resource_type == "AGENT") {
-        r = s.query("SELECT 1 FROM agents WHERE id=$1 AND owner_id=$2", {resource_id, actor_user_id});
+        r = s.query(
+            "SELECT pm.role FROM agents a JOIN project_agents pa ON pa.agent_id=a.id "
+            "JOIN project_members pm ON pm.project_id=pa.project_id AND pm.user_id=$2 "
+            "WHERE a.id=$1 ORDER BY CASE pm.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END LIMIT 1",
+            {resource_id, actor_user_id});
     } else if (resource_type == "CONVERSATION") {
-        r = s.query("SELECT 1 FROM conversations WHERE id=$1 AND owner_id=$2", {resource_id, actor_user_id});
+        r = s.query(
+            "SELECT pm.role FROM conversations c JOIN project_members pm ON pm.project_id=c.project_id "
+            "WHERE c.id=$1 AND pm.user_id=$2",
+            {resource_id, actor_user_id});
     } else if (resource_type == "RUN") {
-        r = s.query("SELECT 1 FROM runs r JOIN conversations c ON c.id=r.conversation_id "
-                    "WHERE r.id=$1 AND c.owner_id=$2", {resource_id, actor_user_id});
+        r = s.query(
+            "SELECT pm.role FROM runs r JOIN conversations c ON c.id=r.conversation_id "
+            "JOIN project_members pm ON pm.project_id=c.project_id "
+            "WHERE r.id=$1 AND pm.user_id=$2",
+            {resource_id, actor_user_id});
     } else {
         return {false, "unsupported resource type"};
     }
-    return r.rows() == 1 ? std::pair{true, std::string("owner")} : std::pair{false, std::string("not owner")};
+    return r.rows() == 1 ? std::pair{true, r.get(0, 0)} : std::pair{false, std::string("not a project member")};
 }
 
 } // namespace ws

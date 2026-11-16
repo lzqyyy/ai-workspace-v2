@@ -57,7 +57,7 @@ erDiagram
 - 写入 owner 成员关系与 Project Agent 映射；
 - 回填 `conversations.project_id`。
 
-工程包 C 的 `007_conversation_project_required.sql` 在兼容 Conversation 写入已切换为始终提供 `project_id` 后，将 `conversations.project_id` 收紧为 `NOT NULL`。Project-first Conversation 路由、Project membership 运行权限与单 active Run 事务仍等待工程包 B 提供成员/Agent 授权上下文后合入。迁移不得删除现有数据，也不得修改 `001` 至 `006`。
+工程包 C 的 `007_conversation_project_required.sql` 在兼容 Conversation 写入已切换为始终提供 `project_id` 后，将 `conversations.project_id` 收紧为 `NOT NULL`。Package B/C 已完成 Project-first Conversation 路由、Project membership 运行权限，以及基于 Project + Conversation 行锁的单 active Run 事务。迁移不得删除现有数据，也不得修改 `001` 至 `006`。
 
 ## 4. 权限查询约束
 
@@ -74,4 +74,4 @@ erDiagram
 
 ## 5. 当前实现状态
 
-工程包 B 已实现 Project、ProjectMember、ProjectAgent 路由、角色授权、最后 owner 保护和 active Run 移除保护。共享 Conversation、`target_agent_id` 发送切换及 Conversation/Message/Run/SSE 的 Project 授权仍属于工程包 C；在这些能力完成前，不得宣称完整多人对话链路已运行时可用。
+工程包 B/C 已实现 Project、ProjectMember、ProjectAgent 路由、角色授权、最后 owner 保护和 active Run 移除保护，以及共享 Conversation、`target_agent_id` 发送、Conversation/Message/Run/SSE 的 Project 授权。2H+2A、viewer 只读、非成员 403、active Run 409、sender-scoped 幂等和单用户回归已由 Docker E2E 覆盖。前端尚未接入 Project-first 路由与 `target_agent_id`。

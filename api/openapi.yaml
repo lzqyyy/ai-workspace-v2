@@ -749,10 +749,10 @@ components:
     Conversation:
       type: object
       description: Project membership grants access to every Conversation in the Project. owner_id is the creator field; agent_id is the historical default Agent.
-      required: [id, agent_id, title, status, created_at, updated_at]
+      required: [id, project_id, owner_id, agent_id, title, status, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
-        project_id: { type: [string, 'null'], format: uuid }
+        project_id: { type: string, format: uuid }
         owner_id: { type: string, format: uuid }
         agent_id:
           type: string

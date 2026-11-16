@@ -88,6 +88,11 @@ def main() -> int:
     ):
         assert name in schemas, f"missing schema: {name}"
     assert schemas["ProjectRole"]["enum"] == ["owner", "editor", "viewer"], "Project role enum mismatch"
+    conversation_schema = schemas["Conversation"]
+    assert "project_id" in conversation_schema.get("required", []), "Conversation.project_id must be required"
+    assert conversation_schema["properties"]["project_id"]["type"] == "string", (
+        "Conversation.project_id must be non-null after 007"
+    )
 
     for name in (
         "CreateProjectRequest",

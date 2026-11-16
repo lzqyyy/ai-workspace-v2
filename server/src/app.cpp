@@ -226,6 +226,21 @@ void Api::registerRoutes()
         });
     }, {Delete});
 
+    app.registerHandler("/api/v1/projects/{1}/conversations", [this](const HttpRequestPtr& req,
+                                                                   std::function<void(const HttpResponsePtr&)>&& cb,
+                                                                   const std::string& projectId) {
+        if (req->method() == Get) {
+            run_json(req, cb, true, [this, projectId](const AuthSession& s, const std::string& rid) {
+                return service_.listProjectConversations(s.user_id, projectId, rid);
+            });
+        } else {
+            run_json(req, cb, true, [this, req, projectId](const AuthSession& s, const std::string& rid) {
+                enforce_origin(req);
+                return service_.createProjectConversation(s.user_id, projectId, parse_body(req), rid);
+            }, 201);
+        }
+    }, {Get, Post});
+
     app.registerHandler("/api/v1/conversations", [this](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
         if (req->method() == Get) {
             run_json(req, cb, true, [this](const AuthSession& s, const std::string& rid) { return service_.listConversations(s.user_id, rid); });
@@ -296,7 +311,7 @@ void Api::registerRunRoutes()
             std::string last = req->getHeader("last-event-id");
             if (last.empty()) last = req->getParameter("after");
             try { cursor = last.empty() ? 0 : std::stoll(last); } catch (...) { cursor = 0; }
-            (void)service_.listRunEvents(session.user_id, eventRunId, cursor);
+            (void)service_.listRunEvents(session.user_id, eventRunId, cursor, checked);
             const std::string run_id = eventRunId;
             const std::string user_id = session.user_id;
             auto state = std::make_shared<StreamState>();
@@ -314,7 +329,7 @@ void Api::registerRunRoutes()
                     state->pump = [this, state, user_id, run_id, checked, close]() {
                         if (state->closed) return;
                         try {
-                            auto result = service_.listRunEvents(user_id, run_id, state->cursor);
+                            auto result = service_.listRunEvents(user_id, run_id, state->cursor, checked);
                             bool terminal = false;
                             for (const auto& event : result["items"]) {
                                 state->cursor = event["seq"].get<long long>();

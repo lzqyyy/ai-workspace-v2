@@ -32,6 +32,12 @@
 15. 两个并发请求使用同一 `client_request_id` 返回同一用户消息、同一 Run，且仅一个 `duplicate=false`。
 16. 登录、Agent、会话、消息请求拒绝未知字段；avatar、消息内容与 `client_request_id` 长度边界返回 400 `VALIDATION_FAILED`。
 17. send/retry 的 `status` 与 Run 状态枚举一致。
+18. Project-first Conversation 创建/列表和 Project member Message 读取。
+19. 2H+2A：owner/editor、两个 Agent、同一共享 Conversation、双方读取完整历史并回放 SSE。
+20. 不同用户使用相同 `client_request_id` 不冲突；同用户重复发送返回原 Run。
+21. viewer 可读/可订阅但不能发送、取消或重试；非成员访问 Conversation/Run/SSE 返回 403。
+22. active Run fixture 下发送返回 409；不同 key 的 retry 在 active Run 期间返回 409。
+23. Agent owner 被移出 Project 后，即使 `project_agents` 历史映射仍存在，也不能再执行该 Agent。
 
 ## 3. 工具探测与容器入口
 
@@ -65,6 +71,11 @@ duplicate_callback: PASS
 wrong_lease: PASS
 sse_replay: PASS
 cross_user_denied: PASS
+shared_conversation_2h2a: PASS
+viewer_read_only: PASS
+non_member_denied: PASS
+active_run_conflict_409: PASS
+removed_agent_owner_denied: PASS
 cancel_and_retry: PASS
 concurrent_send_idempotency: PASS
 unknown_fields_and_lengths: PASS

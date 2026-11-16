@@ -30,6 +30,11 @@ if ($Docker) {
             python:3.12-slim python tests/e2e.py
         if ($LASTEXITCODE -ne 0) { throw 'Docker E2E failed' }
 
+        & docker run --rm --network $network -v "${root}:/src" -w /src `
+            -e BASE_URL=http://core:8080 `
+            python:3.12-slim python tests/shared_conversation.py
+        if ($LASTEXITCODE -ne 0) { throw 'Docker shared Conversation E2E failed' }
+
         $fixtureProject = '00000000-0000-4000-8000-000000000301'
         $fixtureConversation = '00000000-0000-4000-8000-000000000401'
         $fixtureMessage = '00000000-0000-4000-8000-000000000501'
@@ -75,6 +80,7 @@ COMMIT;
                 -e PROJECT_RUN_FIXTURE_USER_ID=00000000-0000-4000-8000-000000000102 `
                 -e PROJECT_RUN_FIXTURE_AGENT_ID=00000000-0000-4000-8000-000000000201 `
                 -e PROJECT_RUN_FIXTURE_RUN_ID=$fixtureRun `
+                -e PROJECT_RUN_FIXTURE_CONVERSATION_ID=$fixtureConversation `
                 -e PROJECT_TEST_REPORT=/src/build/project-api-report.json `
                 python:3.12-slim python tests/project_api.py
             if ($LASTEXITCODE -ne 0) { throw 'Docker Project API E2E failed' }
@@ -137,6 +143,8 @@ Push-Location $root
 try {
     & $python @pythonArgs (Join-Path $root 'tests\e2e.py')
     if ($LASTEXITCODE -ne 0) { throw 'E2E failed' }
+    & $python @pythonArgs (Join-Path $root 'tests\shared_conversation.py')
+    if ($LASTEXITCODE -ne 0) { throw 'Shared Conversation E2E failed' }
     & $python @pythonArgs (Join-Path $root 'tests\project_api.py')
     if ($LASTEXITCODE -ne 0) { throw 'Project API E2E failed' }
 }

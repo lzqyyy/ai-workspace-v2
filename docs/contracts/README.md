@@ -1,6 +1,6 @@
 # 冻结契约索引
 
-版本：`1.0.0`。原冻结日期：2026-11-10；工程包 A 增量冻结：2026-11-16。
+版本：`1.0.0`。原冻结日期：2026-11-10；工程包 A 增量冻结：2026-11-16；工程包 C 运行时完成：2026-11-16。
 
 | 契约 | 文件 | 校验 |
 |---|---|---|
@@ -11,4 +11,4 @@
 | 错误码 | `docs/contracts/error-codes.md` | 契约测试校验 OpenAPI 枚举与文档一致 |
 | Project 权限/分阶段迁移 | `docs/adr/ADR-0004-project-membership.md` | 文档审查 |
 
-工程包 A 只冻结 Project-first 契约，不实现新路由。现有 API 版本、端口、URL、Run 状态机和 SSE envelope 保持不变。契约变更遵循 `AGENTS.md` 第 8 节，不允许下游 Agent 自行修改。
+工程包 A 冻结 Project-first 契约；Package B/C 已实现 Project/成员/Agent 与共享 Conversation 路由，并将 Conversation/Message/Run/SSE 权限切换为 Project membership。现有 API 版本、端口、URL、Run 状态机和 SSE envelope 保持不变。`Conversation.project_id` 已在 OpenAPI 中收紧为 required/non-null，与 `007` 迁移一致。契约变更遵循 `AGENTS.md` 第 8 节。

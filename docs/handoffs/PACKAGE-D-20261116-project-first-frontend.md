@@ -2,7 +2,7 @@
 
 - 状态：REVIEW
 - 主责 Agent：WEB
-- 分支 / 提交：`agent/core/package-def-mvp-closeout` / 本包本地提交（hash 见最终报告）
+- 分支 / 提交：`agent/core/package-def-mvp-closeout` / `358f4a3bdee4a215becbe2cc4799883ba8bc7cf0`
 - 基线：Package C `c2f74c1bbe7b637791b2df511d1f3591be70c4a6`
 - 开始时间：2026-11-16
 - 完成时间：2026-11-16

@@ -8,7 +8,7 @@ agent_contract:
   canonical_branch: main
   remote: origin
   current_release: v0.1.0
-  current_scope: L0 + L1
+  current_scope: L0 + L1 + minimal multiplayer MVP
   auto_sync_skill: .agents/skills/github-auto-sync/SKILL.md
   language: zh-CN
 ```
@@ -47,29 +47,35 @@ agent_contract:
 
 ### 已实现
 
-- 原生 HTML/CSS/JavaScript 登录与对话工作台。
+- 原生 HTML/CSS/JavaScript Project-first 登录与多人对话工作台。
 - C++ Drogon REST/SSE Core。
 - 6 个 gRPC RPC 与 Go Worker。
 - PostgreSQL 持久化、事务、Job 租约、重试、取消和幂等。
 - Mock 流式 Provider 与 OpenAI-compatible Provider 适配器。
-- 浏览器刷新后的历史恢复与 SSE 游标回放。
-- 本地开发、Docker Compose、迁移、测试、Runbook 和交接体系。
-- GitHub 自动同步 Skill。
+- Project、ProjectMember、ProjectAgent；owner/editor/viewer 权限与审计。
+- Project-first 共享 Conversation、`target_agent_id` 发送、单 active Run 和 Project member Run/SSE 权限。
+- 浏览器刷新后的历史恢复、Run SSE 游标回放、跨成员 Run 发现。
+- Docker-first 启动、契约/API/双浏览器 E2E、迁移重放和 2H+2A 演示脚本。
+- 本地开发、Docker Compose、Runbook 和交接体系。
+- GitHub 自动同步 Skill（本任务用户明确禁止 push 时以用户指令为准）。
 
 ### 尚未实现
 
-- Project / 多 Owner / 共享 Agent。
-- 多人共享会话和会话级实时事件。
-- Task / Handoff 业务对象、双 Agent 协作。
-- 插件系统、Profile、主题、命令面板。
+- Conversation 级实时事件/订阅；跨成员新 Run 当前依赖活动 Conversation 短轮询发现。
+- Task / Handoff、文件、共享记忆和插件系统。
+- 诊断、能力缺口、匹配、Agreement、Trial。
+- 多 Run 并行、Conversation 独立成员、消息编辑删除。
 - 正式用户注册、管理员用户管理、登录失败限流。
 - 生产 HTTPS 反向代理的已部署实例。
 
 ### 当前权限语义
 
-- 当前是“多用户账号、单 Owner 资源隔离”。
-- Agent、Conversation、Run 只能由创建者访问。
-- 多人共享 Agent 尚未实现，禁止在文档或验收中声称已支持。
+- Project membership 是 Conversation、Message、Run 与 SSE 的统一授权边界。
+- owner/editor 可创建共享 Conversation、发送消息和使用 Project Agent；viewer 只读。
+- owner/editor 只能取消/重试自己的 Run；owner 可取消/重试任意 Run。
+- Agent 归 owner 所有；只有 Agent owner 能把自己的 active Agent 加入 Project。
+- 非 Project 成员访问 Project 资源统一返回 403；一个 Conversation 同时最多一个 queued/running Run。
+- 前端按钮状态只用于交互，服务端始终是唯一授权依据。
 
 ## 3. 架构红线
 
@@ -378,11 +384,11 @@ Worker 上下文必须包含本次 trigger message；否则模型会引用上一
 
 按顺序推进：
 
-1. 中心化多用户部署：HTTPS、账号管理、Worker 扩展、备份。
-2. Project + ProjectMember：共享 Agent、owner/editor/viewer。
-3. 私有 Conversation：共享 Agent，但每个用户独立会话上下文。
-4. 会话级 SSE：多人共享会话时同步消息和运行状态。
-5. Task/Handoff、双 Owner、双 Agent、第二 Provider。
+1. 中心化多用户部署：HTTPS、正式账号、限流、审计查询、Worker 扩展、备份。
+2. Conversation 级实时通知或 Run subscription 发现，消除跨成员新 Run 的短轮询延迟；保持现有 Run SSE envelope。
+3. 多 Run 并行前的锁粒度、前端运行状态和冲突策略评审。
+4. Task/Handoff、文件、共享记忆和第二 Provider。
+5. 再按 Master PRD 推进诊断、能力缺口、匹配、Agreement、Trial 与插件。
 
 每次只推进一个可验收切片，不在基础权限未稳定时提前做插件平台。
 

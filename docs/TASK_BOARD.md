@@ -1,7 +1,7 @@
 # 基础对话平台任务看板
 
 更新时间：2026-11-16
-当前版本：V0.1.1
+当前版本：V0.2.0
 
 ## 当前任务
 
@@ -36,6 +36,7 @@
 | PACKAGE-C-20261116 共享 Conversation 与单 active Run 切换 | CORE | REVIEW | 已 rebase 到 Package B；Project-first Conversation、target Agent 发送、Project member Run/SSE 权限、单 active Run 与 2H+2A 测试；Docker-first 全量测试 PASS |
 | PACKAGE-D-20261116 Project-first 多用户前端 | WEB | REVIEW | Project 切换/创建、成员/Agent 管理、共享 Conversation、target Agent 发送、共享 Run SSE、角色交互控制；状态测试与 headless 浏览器 E2E PASS |
 | PACKAGE-E-20261116 2H+2A 验收与稳定性 | QA/CORE | REVIEW | 双浏览器 owner/editor + 两 Agent 同会话、双方 SSE、权限矩阵、并发 409、幂等、迁移重放；Docker-first 全量 PASS |
+| PACKAGE-F-20261116 交付、演示与交接 | QA/COORD | REVIEW | Docker-first demo seed、2H+2A 手工/自动验收入口、健康证据、Runbook、验收记录与最终交接 |
 
 ## Gate 结果
 
@@ -43,17 +44,18 @@
 - Gate 2 纵向链路门禁：PASS
 - Gate 3 安全与可靠性门禁：PASS
 - Gate 4 交付门禁：PASS（Docker-first 构建、E2E、lease 与 health 验证）
+- Gate 5 最小多人 MVP：PASS（双浏览器 2H+2A、双方 SSE、权限矩阵、迁移重放与单用户回归）
 
 ## L2 后续任务
 
 | 任务 | 建议主责 | 状态 | 说明 |
 |---|---|---|---|
 | L2-01 中心化多用户部署 | QA | TODO | HTTPS、账号管理、Worker 扩容、备份 |
-| L2-02 Project / ProjectMember | CORE | REVIEW | Package A/B/C 完成契约、迁移、成员/Agent 管理、共享 Conversation、Project member 运行权限与 2H+2A 验证 |
+| L2-02 Project / ProjectMember | CORE | REVIEW | Package A/B/C 完成契约、迁移、成员/Agent 管理、共享 Conversation、Project member 运行权限；D/E 前端与 2H+2A 验收 PASS |
 | L2-03 私有 Conversation | CORE/WEB | TODO | 共享 Agent、每人独立会话上下文 |
-| L2-04 会话级 SSE | CORE/WEB | TODO | 共享会话实时同步 |
+| L2-04 会话级 SSE | CORE/WEB | REVIEW | Project member Run SSE、回放与双浏览器订阅已验收；Conversation 级新 Run 发现仍为短轮询 |
 | L2-05 Task / Handoff | COORD/CORE | TODO | 第二协作阶段 |
-| L2-06 双 Owner / 双 Agent | COORD | TODO | 多所有者与多 Agent 协作 |
+| L2-06 双 Owner / 双 Agent | COORD | REVIEW | 2H+2A、多 Owner 角色保护、双 Agent 选择与单 active Run 已验收；多 Run 并行后置 |
 | L2-07 第二模型 Provider | WORKER | TODO | 保持统一错误模型 |
 
 ## 变更规则

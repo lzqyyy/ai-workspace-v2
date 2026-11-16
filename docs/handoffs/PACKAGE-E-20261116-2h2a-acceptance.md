@@ -2,7 +2,7 @@
 
 - 状态：REVIEW
 - 主责 Agent：QA/CORE
-- 分支 / 提交：`agent/core/package-def-mvp-closeout` / 本包本地提交（hash 见最终报告）
+- 分支 / 提交：`agent/core/package-def-mvp-closeout` / `6abaade2f8b86d19ba3108ba19e033c54c86ad9d`
 - 基线：Package D `358f4a3bdee4a215becbe2cc4799883ba8bc7cf0`
 - 开始时间：2026-11-16
 - 完成时间：2026-11-16

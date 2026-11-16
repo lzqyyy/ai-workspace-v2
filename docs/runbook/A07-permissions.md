@@ -30,8 +30,10 @@
 
 ## 4. 实现状态与边界
 
-- 工程包 A 只冻结数据模型与 OpenAPI 契约，不实现 Project 路由和共享 Conversation 权限。
-- 工程包 B/C 完成切换前，当前 C++ 运行时仍使用单 Owner 资源隔离；不得宣称多人 Project 已可用。
+- 工程包 A 冻结数据模型与 OpenAPI 契约；工程包 B 已实现 Project、ProjectMember、ProjectAgent 的 C++ 路由、角色授权、最后 owner 保护和 active Run 移除保护。
+- Project 成员/Agent 管理已使用 Project membership 授权；共享 Conversation、`target_agent_id` 发送切换以及 Conversation/Message/Run/SSE 的 Project 权限仍由工程包 C 完成。
+- 在工程包 C 完成前，旧 Conversation/Run/SSE 路径仍保持单 Owner 资源隔离；不得宣称完整多人对话链路已可用。
+- Project 成员/Agent 关键写操作和权限拒绝写入脱敏审计，只包含资源 ID、角色、动作、结果和 `request_id`。
 - Agent 所有权继续由 `agents.owner_id` 表示，不因加入 Project 转让。
 - 前端权限状态仅用于交互，任何权限判断都不以前端缓存为依据。
 - 生产必须在 HTTPS 反向代理后运行。

@@ -32,6 +32,7 @@
 | A01 GitHub 自动同步 | COORD | DONE | `.agents/skills/github-auto-sync/` |
 | PHASE3-20261113 环境可移植性、生命周期与清理 | CORE/WORKER/QA | DONE | 阶段化启动日志、gRPC Shutdown/join、Docker-first 缓存工具镜像、路径清理；构建/E2E/lease/health PASS |
 | PACKAGE-A-20261116 多人平台基础数据模型与 API 契约 | CORE/COORD | REVIEW | Project/成员/Agent schema、只增迁移、Project-first OpenAPI、契约测试与交接；Docker/PG16/E2E PASS |
+| PACKAGE-B-20261116 Project API 与权限 | CORE | REVIEW | Project/成员/Agent C++ 路由、owner/editor/viewer 授权、最后 owner 与 active Run 移除保护、脱敏审计；Docker-first 全量测试 PASS |
 
 ## Gate 结果
 
@@ -45,7 +46,7 @@
 | 任务 | 建议主责 | 状态 | 说明 |
 |---|---|---|---|
 | L2-01 中心化多用户部署 | QA | TODO | HTTPS、账号管理、Worker 扩容、备份 |
-| L2-02 Project / ProjectMember | CORE | IN_PROGRESS | Package A 契约/迁移完成；owner/editor/viewer runtime 由 B/C 实现 |
+| L2-02 Project / ProjectMember | CORE | IN_PROGRESS | Package A/B 完成契约、迁移和成员/Agent 管理；共享 Conversation 与发送授权由 Package C 完成 |
 | L2-03 私有 Conversation | CORE/WEB | TODO | 共享 Agent、每人独立会话上下文 |
 | L2-04 会话级 SSE | CORE/WEB | TODO | 共享会话实时同步 |
 | L2-05 Task / Handoff | COORD/CORE | TODO | 第二协作阶段 |

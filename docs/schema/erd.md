@@ -38,7 +38,7 @@ erDiagram
 - Project 成员可见 Project 下全部 Conversation、Message，并可订阅该 Project 下 Run 的 SSE；不建立 `conversation_members`。
 - `conversations.owner_id` 保留为创建者字段，不再作为权限归属；`conversations.agent_id` 保留为历史默认 Agent 字段。
 - 新消息请求必须携带 `target_agent_id`；该值写入对应 Run 的 `runs.agent_id`。`target_agent_id` 是请求字段，不是 `messages` 表字段。
-- 一个 Conversation 同时最多一个 `status IN ('queued','running')` 的 Run；工程包 B/C 必须在创建 Run 的事务中使用发送锁并返回 409。工程包 A 不提前增加会破坏现有单用户链路的数据库约束。
+- 一个 Conversation 同时最多一个 `status IN ('queued','running')` 的 Run；工程包 C 必须在创建 Run 的事务中使用发送锁并返回 409。工程包 B 只实现成员/Agent 移除保护，不切换旧发送链路。
 - `messages.client_request_id` 按 `(conversation_id, sender_id, client_request_id)` 唯一，不同用户可使用相同客户端请求 ID。
 - Project 内一个用户只有一个角色；至少一个 `owner` 由应用事务保证。不能移除或降级最后一个 owner。
 - Agent 继续由 `agents.owner_id` 拥有；加入 Project 不转让所有权。Agent owner 必须是 Project 成员，且只有 owner 自己能执行加入操作。
@@ -58,7 +58,7 @@ erDiagram
 - 回填 `conversations.project_id`；
 - 暂不将 `conversations.project_id` 设为 `NOT NULL`，因为现有 C++ 创建会话路径尚未切换到 Project。
 
-`conversations.project_id NOT NULL` 与业务写入切换属于工程包 B/C，不属于模型变更。迁移不得删除现有数据，也不得修改 `001` 至 `005`。
+`conversations.project_id NOT NULL` 与业务写入切换属于工程包 C，不属于模型变更。工程包 B 不修改旧 Conversation 创建路径；迁移不得删除现有数据，也不得修改 `001` 至 `005`。
 
 ## 4. 权限查询约束
 
@@ -75,4 +75,4 @@ erDiagram
 
 ## 5. 当前实现状态
 
-本文件冻结的是工程包 A 的目标数据与权限语义。Project 路由、Project 成员授权和共享 Conversation 运行时尚未实现；工程包 B/C 完成切换前，现有 C++ 实现仍保持单 Owner 资源隔离。不得据本文档宣称多人 Project 已运行时可用。
+工程包 B 已实现 Project、ProjectMember、ProjectAgent 路由、角色授权、最后 owner 保护和 active Run 移除保护。共享 Conversation、`target_agent_id` 发送切换及 Conversation/Message/Run/SSE 的 Project 授权仍属于工程包 C；在这些能力完成前，不得宣称完整多人对话链路已运行时可用。

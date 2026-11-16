@@ -65,6 +65,22 @@ private:
         } catch (const ServiceError& e) { cb(error_response(e, rid)); }
         catch (...) { cb(internal_error(rid)); }
     }
+    template <typename F>
+    void run_empty(const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>& cb, bool authenticated, F&& operation) {
+        const std::string rid = request_id_from(req->getHeader("x-request-id"));
+        try {
+            const std::string checked = required_request_id(req);
+            std::optional<AuthSession> session;
+            if (authenticated) session = authenticate(req);
+            operation(session.value_or(AuthSession{}), checked);
+            auto response = HttpResponse::newHttpResponse();
+            response->setStatusCode(k204NoContent);
+            response->addHeader("Cache-Control", "no-store");
+            response->addHeader("X-Request-ID", checked);
+            cb(response);
+        } catch (const ServiceError& e) { cb(error_response(e, rid)); }
+        catch (...) { cb(internal_error(rid)); }
+    }
     void registerRunRoutes();
     CoreService& service_;
     const Config& config_;
@@ -136,6 +152,79 @@ void Api::registerRoutes()
             }, 201);
         }
     }, {Get, Post});
+
+    app.registerHandler("/api/v1/projects", [this](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
+        if (req->method() == Get) {
+            run_json(req, cb, true, [this](const AuthSession& s, const std::string& rid) {
+                return service_.listProjects(s.user_id, rid);
+            });
+        } else {
+            run_json(req, cb, true, [this, req](const AuthSession& s, const std::string& rid) {
+                enforce_origin(req); return service_.createProject(s.user_id, parse_body(req), rid);
+            }, 201);
+        }
+    }, {Get, Post});
+
+    app.registerHandler("/api/v1/projects/{1}", [this](const HttpRequestPtr& req,
+                                                       std::function<void(const HttpResponsePtr&)>&& cb,
+                                                       const std::string& projectId) {
+        run_json(req, cb, true, [this, projectId](const AuthSession& s, const std::string& rid) {
+            return service_.getProject(s.user_id, projectId, rid);
+        });
+    }, {Get});
+
+    app.registerHandler("/api/v1/projects/{1}/members", [this](const HttpRequestPtr& req,
+                                                               std::function<void(const HttpResponsePtr&)>&& cb,
+                                                               const std::string& projectId) {
+        if (req->method() == Get) {
+            run_json(req, cb, true, [this, projectId](const AuthSession& s, const std::string& rid) {
+                return service_.listProjectMembers(s.user_id, projectId, rid);
+            });
+        } else {
+            run_json(req, cb, true, [this, req, projectId](const AuthSession& s, const std::string& rid) {
+                enforce_origin(req); return service_.addProjectMember(s.user_id, projectId, parse_body(req), rid);
+            }, 201);
+        }
+    }, {Get, Post});
+
+    app.registerHandler("/api/v1/projects/{1}/members/{2}", [this](const HttpRequestPtr& req,
+                                                                   std::function<void(const HttpResponsePtr&)>&& cb,
+                                                                   const std::string& projectId,
+                                                                   const std::string& userId) {
+        if (req->method() == Patch) {
+            run_json(req, cb, true, [this, req, projectId, userId](const AuthSession& s, const std::string& rid) {
+                enforce_origin(req);
+                return service_.updateProjectMember(s.user_id, projectId, userId, parse_body(req), rid);
+            });
+        } else {
+            run_empty(req, cb, true, [this, req, projectId, userId](const AuthSession& s, const std::string& rid) {
+                enforce_origin(req); service_.removeProjectMember(s.user_id, projectId, userId, rid);
+            });
+        }
+    }, {Patch, Delete});
+
+    app.registerHandler("/api/v1/projects/{1}/agents", [this](const HttpRequestPtr& req,
+                                                              std::function<void(const HttpResponsePtr&)>&& cb,
+                                                              const std::string& projectId) {
+        if (req->method() == Get) {
+            run_json(req, cb, true, [this, projectId](const AuthSession& s, const std::string& rid) {
+                return service_.listProjectAgents(s.user_id, projectId, rid);
+            });
+        } else {
+            run_json(req, cb, true, [this, req, projectId](const AuthSession& s, const std::string& rid) {
+                enforce_origin(req); return service_.addProjectAgent(s.user_id, projectId, parse_body(req), rid);
+            }, 201);
+        }
+    }, {Get, Post});
+
+    app.registerHandler("/api/v1/projects/{1}/agents/{2}", [this](const HttpRequestPtr& req,
+                                                                  std::function<void(const HttpResponsePtr&)>&& cb,
+                                                                  const std::string& projectId,
+                                                                  const std::string& agentId) {
+        run_empty(req, cb, true, [this, req, projectId, agentId](const AuthSession& s, const std::string& rid) {
+            enforce_origin(req); service_.removeProjectAgent(s.user_id, projectId, agentId, rid);
+        });
+    }, {Delete});
 
     app.registerHandler("/api/v1/conversations", [this](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb) {
         if (req->method() == Get) {

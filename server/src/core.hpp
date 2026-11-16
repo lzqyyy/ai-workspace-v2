@@ -28,6 +28,21 @@ public:
 
     Json listAgents(const std::string& user_id, const std::string& request_id);
     Json createAgent(const std::string& user_id, const Json& body, const std::string& request_id);
+    Json listProjects(const std::string& user_id, const std::string& request_id);
+    Json createProject(const std::string& user_id, const Json& body, const std::string& request_id);
+    Json getProject(const std::string& user_id, const std::string& project_id, const std::string& request_id);
+    Json listProjectMembers(const std::string& user_id, const std::string& project_id, const std::string& request_id);
+    Json addProjectMember(const std::string& user_id, const std::string& project_id, const Json& body,
+                          const std::string& request_id);
+    Json updateProjectMember(const std::string& user_id, const std::string& project_id,
+                             const std::string& target_user_id, const Json& body, const std::string& request_id);
+    void removeProjectMember(const std::string& user_id, const std::string& project_id,
+                             const std::string& target_user_id, const std::string& request_id);
+    Json listProjectAgents(const std::string& user_id, const std::string& project_id, const std::string& request_id);
+    Json addProjectAgent(const std::string& user_id, const std::string& project_id, const Json& body,
+                         const std::string& request_id);
+    void removeProjectAgent(const std::string& user_id, const std::string& project_id, const std::string& agent_id,
+                            const std::string& request_id);
     Json listConversations(const std::string& user_id, const std::string& request_id);
     Json createConversation(const std::string& user_id, const Json& body, const std::string& request_id);
     Json listMessages(const std::string& user_id, const std::string& conversation_id, long long after_seq, const std::string& request_id);
@@ -59,6 +74,11 @@ private:
                const std::string& action, const std::string& resource_type, const std::string& resource_id,
                const std::string& result, const std::string& request_id,
                const Json& metadata = Json::object());
+    void auditDenied(const std::string& user_id, const std::string& attempted_action, const std::string& project_id,
+                     const std::string& request_id, const std::string& role = {});
+    std::string requireProjectRole(PgSession& session, const std::string& project_id, const std::string& user_id,
+                                   std::initializer_list<std::string_view> allowed, bool lock_project,
+                                   const std::string& attempted_action, const std::string& request_id);
     static void require_uuid(const std::string& value, const std::string& field);
     static void require_text(const std::string& value, const std::string& field, std::size_t max_length);
     static bool retryable_error(const std::string& error_code);

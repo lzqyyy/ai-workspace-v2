@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>AI Workspace · 基础对话</title>
+  <title>AI Workspace · 多人协作</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -14,8 +14,8 @@
         <div class="orb orb-a"></div><div class="orb orb-b"></div>
         <div class="auth-copy">
           <span class="eyebrow">AI WORKSPACE V2.0</span>
-          <h1>让对话回到<br><em>可追踪的工作流</em></h1>
-          <p>C++ 核心负责权限与持久化，Go Worker 流式执行模型调用。每一次 Run 都有状态、事件和恢复路径。</p>
+          <h1>让对话回到<br><em>可追踪的协作流</em></h1>
+          <p>Project 统一成员、Agent 与共享会话权限；每个 Run 由服务端授权并持久化，所有成员都可从同一事件序列恢复。</p>
           <div class="pipeline">
             <span>Browser</span><i></i><span>C++</span><i></i><span>Worker</span><i></i><span>Model</span>
           </div>
@@ -25,15 +25,15 @@
         <form id="login-form" class="login-card">
           <div class="brand-mark">AW</div>
           <div>
-            <p class="eyebrow">基础对话平台</p>
+            <p class="eyebrow">多人多 Agent 基础平台</p>
             <h2>登录工作台</h2>
-            <p class="muted">使用本地演示账号开始纵向链路验收。</p>
+            <p class="muted">使用本地演示账号进入 Project-first 协作界面。</p>
           </div>
           <label>用户名<input id="username" name="username" autocomplete="username" value="demo" required></label>
           <label>密码<input id="password" name="password" type="password" autocomplete="current-password" value="demo1234" minlength="8" required></label>
           <button id="login-button" class="button primary wide" type="submit">进入 Workspace</button>
           <p id="login-error" class="form-error" role="alert"></p>
-          <p class="demo-hint">演示账号 <code>demo</code> / <code>demo1234</code></p>
+          <p class="demo-hint">演示账号 <code>demo</code> / <code>demo1234</code> 或 <code>other</code> / <code>demo1234</code></p>
         </form>
       </div>
     </section>
@@ -41,18 +41,31 @@
     <section id="workspace-view" class="workspace-view hidden">
       <aside class="sidebar">
         <div class="sidebar-head">
-          <div class="brand-row"><div class="brand-mark small">AW</div><div><strong>Workspace</strong><span>基础对话</span></div></div>
+          <div class="brand-row"><div class="brand-mark small">AW</div><div><strong>Workspace</strong><span>多人协作</span></div></div>
           <button id="logout-button" class="icon-button" title="退出登录" aria-label="退出登录">↗</button>
         </div>
-        <button id="new-conversation" class="button primary wide" type="button"><span>＋</span> 新建对话</button>
-        <div class="side-label"><span>会话</span><span id="conversation-count">0</span></div>
-        <nav id="conversation-list" class="conversation-list" aria-label="会话列表"></nav>
+
+        <div class="project-switch">
+          <label class="compact-label">当前 Project
+            <select id="project-select" aria-label="选择 Project"></select>
+          </label>
+          <button id="new-project" class="icon-button bordered" type="button" title="创建 Project" aria-label="创建 Project">＋</button>
+        </div>
+        <button id="project-settings" class="project-summary" type="button">
+          <span><strong id="project-name">未选择 Project</strong><small id="project-description">创建或加入 Project 后开始协作</small></span>
+          <span id="role-badge" class="role-badge">—</span>
+        </button>
+
+        <button id="new-conversation" class="button primary wide" type="button"><span>＋</span> 新建共享对话</button>
+        <div class="side-label"><span>共享会话</span><span id="conversation-count">0</span></div>
+        <nav id="conversation-list" class="conversation-list" aria-label="共享会话列表"></nav>
+
         <div class="sidebar-bottom">
-          <label class="agent-picker">当前 Agent
-            <select id="agent-select" aria-label="选择 Agent"></select>
+          <label class="agent-picker">发送给 Project Agent
+            <select id="agent-select" aria-label="选择目标 Agent"></select>
           </label>
           <button id="new-agent" class="button ghost wide" type="button">＋ 创建 Agent</button>
-          <div class="user-chip"><span id="user-avatar">D</span><div><strong id="user-name">Demo User</strong><small>本地会话</small></div></div>
+          <div class="user-chip"><span id="user-avatar">D</span><div><strong id="user-name">Demo User</strong><small id="user-role">本地会话</small></div></div>
         </div>
       </aside>
 
@@ -60,9 +73,9 @@
         <header class="chat-header">
           <button id="sidebar-toggle" class="icon-button mobile-only" type="button" aria-label="打开会话列表">☰</button>
           <div>
-            <p class="eyebrow">CONVERSATION</p>
-            <h2 id="conversation-title">选择一个会话</h2>
-            <p id="conversation-subtitle" class="muted">历史消息由 C++ 从 PostgreSQL 读取</p>
+            <p class="eyebrow">SHARED CONVERSATION</p>
+            <h2 id="conversation-title">选择一个共享会话</h2>
+            <p id="conversation-subtitle" class="muted">Project 成员共享完整消息历史</p>
           </div>
           <div class="run-state" id="run-state"><span class="dot"></span><span id="run-state-text">空闲</span></div>
         </header>
@@ -70,9 +83,9 @@
         <section id="message-stage" class="message-stage">
           <div id="empty-state" class="empty-state">
             <div class="empty-symbol">◌</div>
-            <h3>从一条消息开始</h3>
-            <p>创建 Agent 与会话后，消息将通过 Run/Job 异步执行，并以 SSE 流式回传。</p>
-            <button id="empty-action" class="button primary" type="button">创建 Agent</button>
+            <h3>从 Project 协作开始</h3>
+            <p>创建 Project、加入 Agent 和共享会话后，成员可以选择不同 Agent 发送消息。</p>
+            <button id="empty-action" class="button primary" type="button">创建 Project</button>
           </div>
           <div id="messages" class="messages"></div>
         </section>
@@ -85,13 +98,14 @@
           <form id="message-form" class="composer">
             <textarea id="message-input" rows="1" maxlength="32000" placeholder="输入消息，Enter 发送，Shift + Enter 换行" aria-label="消息内容" disabled></textarea>
             <div class="composer-actions">
-              <span class="composer-hint">SSE 流式 · request_id 全链路追踪</span>
+              <span id="composer-hint" class="composer-hint">选择 Project Agent · SSE 流式协作</span>
               <div>
                 <button id="cancel-button" class="button danger hidden" type="button">取消运行</button>
                 <button id="send-button" class="button primary" type="submit" disabled>发送 <span>↗</span></button>
               </div>
             </div>
           </form>
+          <p id="readonly-note" class="readonly-note hidden">当前为 viewer，只读查看共享消息与 SSE 运行状态。</p>
         </footer>
       </main>
     </section>
@@ -99,12 +113,51 @@
 
   <dialog id="agent-dialog" class="dialog">
     <form id="agent-form" method="dialog">
-      <div class="dialog-head"><div><p class="eyebrow">AGENT REGISTRY</p><h2>创建 Agent</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="关闭">×</button></div>
+      <div class="dialog-head"><div><p class="eyebrow">AGENT REGISTRY</p><h2>创建 Agent</h2></div><button class="icon-button" type="button" data-close-dialog="agent-dialog" aria-label="关闭">×</button></div>
       <label>名称<input id="agent-name" maxlength="80" placeholder="例如：产品研究助手" required></label>
       <label>系统提示词<textarea id="agent-prompt" rows="5" maxlength="8000" placeholder="定义 Agent 的角色、语气和边界"></textarea></label>
       <p id="agent-error" class="form-error" role="alert"></p>
-      <div class="dialog-actions"><button class="button ghost" value="cancel" type="button" data-close-dialog>取消</button><button id="agent-submit" class="button primary" value="default" type="submit">创建并选择</button></div>
+      <div class="dialog-actions"><button class="button ghost" type="button" data-close-dialog="agent-dialog">取消</button><button id="agent-submit" class="button primary" type="submit">创建</button></div>
     </form>
+  </dialog>
+
+  <dialog id="project-create-dialog" class="dialog">
+    <form id="project-form" method="dialog">
+      <div class="dialog-head"><div><p class="eyebrow">PROJECT</p><h2>创建 Project</h2></div><button class="icon-button" type="button" data-close-dialog="project-create-dialog" aria-label="关闭">×</button></div>
+      <label>名称<input id="project-name-input" maxlength="120" placeholder="例如：黑客松协作项目" required></label>
+      <label>简介<textarea id="project-description-input" rows="4" maxlength="20000" placeholder="项目目标、交付物或协作范围"></textarea></label>
+      <p id="project-error" class="form-error" role="alert"></p>
+      <div class="dialog-actions"><button class="button ghost" type="button" data-close-dialog="project-create-dialog">取消</button><button id="project-submit" class="button primary" type="submit">创建并进入</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="project-settings-dialog" class="dialog wide-dialog">
+    <div class="dialog-content">
+      <div class="dialog-head">
+        <div><p class="eyebrow">PROJECT ACCESS</p><h2 id="settings-project-name">Project 详情</h2><p class="muted">成员列表、角色与可用 Agent 均由服务端返回。</p></div>
+        <button class="icon-button" type="button" data-close-dialog="project-settings-dialog" aria-label="关闭">×</button>
+      </div>
+
+      <section class="settings-section">
+        <div class="section-head"><div><h3>成员</h3><p>owner 管理角色；viewer 只读。</p></div><button id="show-member-form" class="button ghost small hidden" type="button">＋ 添加成员</button></div>
+        <form id="member-form" class="inline-form hidden">
+          <label>用户 UUID<input id="member-user-id" placeholder="粘贴已注册用户的 UUID" required></label>
+          <label>角色<select id="member-role"><option value="editor">editor</option><option value="viewer">viewer</option><option value="owner">owner</option></select></label>
+          <button class="button primary" type="submit">添加</button>
+        </form>
+        <div id="member-list" class="settings-list"></div>
+      </section>
+
+      <section class="settings-section">
+        <div class="section-head"><div><h3>Project Agent</h3><p>owner/editor 可加入自己拥有的 active Agent。</p></div></div>
+        <div id="project-agent-list" class="settings-list"></div>
+        <div id="add-agent-controls" class="inline-form hidden">
+          <label>我的 Agent<select id="owned-agent-select"></select></label>
+          <button id="add-owned-agent" class="button primary" type="button">加入 Project</button>
+        </div>
+      </section>
+      <p id="settings-error" class="form-error" role="alert"></p>
+    </div>
   </dialog>
 
   <div id="toast" class="toast hidden" role="status"></div>

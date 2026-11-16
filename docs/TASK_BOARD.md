@@ -34,6 +34,7 @@
 | PACKAGE-A-20261116 多人平台基础数据模型与 API 契约 | CORE/COORD | REVIEW | Project/成员/Agent schema、只增迁移、Project-first OpenAPI、契约测试与交接；Docker/PG16/E2E PASS |
 | PACKAGE-B-20261116 Project API 与权限 | CORE | REVIEW | Project/成员/Agent C++ 路由、owner/editor/viewer 授权、最后 owner 与 active Run 移除保护、脱敏审计；Docker-first 全量测试 PASS |
 | PACKAGE-C-20261116 共享 Conversation 与单 active Run 切换 | CORE | REVIEW | 已 rebase 到 Package B；Project-first Conversation、target Agent 发送、Project member Run/SSE 权限、单 active Run 与 2H+2A 测试；Docker-first 全量测试 PASS |
+| PACKAGE-D-20261116 Project-first 多用户前端 | WEB | REVIEW | Project 切换/创建、成员/Agent 管理、共享 Conversation、target Agent 发送、共享 Run SSE、角色交互控制；状态测试与 headless 浏览器 E2E PASS |
 
 ## Gate 结果
 

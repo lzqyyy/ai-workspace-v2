@@ -35,6 +35,7 @@
 | PACKAGE-B-20261116 Project API 与权限 | CORE | REVIEW | Project/成员/Agent C++ 路由、owner/editor/viewer 授权、最后 owner 与 active Run 移除保护、脱敏审计；Docker-first 全量测试 PASS |
 | PACKAGE-C-20261116 共享 Conversation 与单 active Run 切换 | CORE | REVIEW | 已 rebase 到 Package B；Project-first Conversation、target Agent 发送、Project member Run/SSE 权限、单 active Run 与 2H+2A 测试；Docker-first 全量测试 PASS |
 | PACKAGE-D-20261116 Project-first 多用户前端 | WEB | REVIEW | Project 切换/创建、成员/Agent 管理、共享 Conversation、target Agent 发送、共享 Run SSE、角色交互控制；状态测试与 headless 浏览器 E2E PASS |
+| PACKAGE-E-20261116 2H+2A 验收与稳定性 | QA/CORE | REVIEW | 双浏览器 owner/editor + 两 Agent 同会话、双方 SSE、权限矩阵、并发 409、幂等、迁移重放；Docker-first 全量 PASS |
 
 ## Gate 结果
 

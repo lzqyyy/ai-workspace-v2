@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -86,6 +87,14 @@ def main() -> int:
         "FORBIDDEN",
         {"content": "not allowed", "client_request_id": f"shared-loose-{uuid.uuid4()}", "target_agent_id": loose_agent["id"]},
     )
+    expect_error(
+        owner,
+        "POST",
+        f"/api/v1/conversations/{conversation_id}/messages",
+        400,
+        "VALIDATION_FAILED",
+        {"content": "invalid target", "client_request_id": f"shared-invalid-{uuid.uuid4()}", "target_agent_id": "not-a-uuid"},
+    )
 
     shared_request_id = f"shared-request-{uuid.uuid4()}"
     owner_send = send(owner, conversation_id, owner_agent["id"], "A sends to owner agent", shared_request_id)
@@ -121,6 +130,26 @@ def main() -> int:
     assert editor_pair[0]["sender_id"] == editor_user["id"]
     assert editor_pair[1]["sender_id"] == editor_agent["id"]
     assert len([item for item in messages if item["content"] == "A sends to owner agent"]) == 1
+
+    def concurrent_attempt(client, agent_id, content, request_id):
+        try:
+            return ("ok", send(client, conversation_id, agent_id, content, request_id))
+        except ApiFailure as error:
+            return ("error", error)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        concurrent_results = list(pool.map(lambda args: concurrent_attempt(*args), [
+            (owner, owner_agent["id"], "concurrent owner send", f"shared-race-owner-{uuid.uuid4()}"),
+            (editor, editor_agent["id"], "concurrent editor send", f"shared-race-editor-{uuid.uuid4()}"),
+        ]))
+    successes = [result for result in concurrent_results if result[0] == "ok"]
+    conflicts = [result for result in concurrent_results if result[0] == "error"]
+    assert len(successes) == 1, concurrent_results
+    assert len(conflicts) == 1, concurrent_results
+    assert conflicts[0][1].status == 409 and conflicts[0][1].code == "CONFLICT", conflicts[0][1]
+    race_run = successes[0][1]["run_id"]
+    race_events = owner.events(race_run) if successes[0][1]["message"]["sender_id"] == owner_user["id"] else editor.events(race_run)
+    assert race_events[-1]["type"] == "message.completed", race_events[-1]
 
     expect_error(editor, "POST", f"/api/v1/runs/{owner_run}/retry", 403, "FORBIDDEN", None)
 
@@ -214,6 +243,8 @@ def main() -> int:
         "non_member_denied": True,
         "removed_agent_owner_denied": True,
         "run_permissions": True,
+        "invalid_target_validation": True,
+        "concurrent_send_single_active": True,
     }, ensure_ascii=False))
     return 0
 

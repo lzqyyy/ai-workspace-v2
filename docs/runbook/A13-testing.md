@@ -5,11 +5,14 @@
 | 层 | 命令 | 覆盖 |
 |---|---|---|
 | 契约 | `./scripts/test-contracts.ps1` | OpenAPI、6 RPC、SSE、错误码、Protobuf |
-| Docker 全量 | `./scripts/setup-dev.ps1 -Up` + `./scripts/test.ps1 -Docker` | 契约、Go test/vet、前端检查、E2E；不依赖宿主机 Python/protoc/Go |
+| Docker 全量 | `./scripts/setup-dev.ps1 -Up` + `./scripts/test.ps1 -Docker` | 契约、Go test/vet、前端检查、单用户 E2E、2H+2A E2E、Project fixture、迁移重放；不依赖宿主机 Python/protoc/Go |
 | C++ 构建 | `./scripts/build.ps1` | Drogon、libpq、OpenSSL、gRPC 链接 |
 | Worker 单元 | `go test ./worker/...` | Mock 流式、提示词、取消 |
-| 前端状态 | `node tests/frontend_state_test.js` | Retry 防重复、刷新恢复、SSE 游标与完成态 |
-| E2E | `./scripts/e2e.ps1` 或 `./scripts/e2e.ps1 -Docker` | 登录、Agent、会话、发送、SSE、落库、幂等、取消、重试、越权 |
+| 前端状态 | `node tests/frontend_state_test.js` | 角色控件、Project 路由、target Agent、Retry 防重、刷新恢复、共享 Run 发现、SSE 游标/去重 |
+| E2E | `./scripts/e2e.ps1` 或 `./scripts/e2e.ps1 -Docker` | 登录、Agent、会话、发送、SSE、落库、幂等、取消、重试、越权、2H+2A |
+| 浏览器 E2E | `./scripts/frontend-e2e.ps1` | 真实 Edge/Chrome 登录、Project-first 单用户发送与流式完成 |
+| 2H+2A 浏览器 E2E | `./scripts/frontend-2h2a-e2e.ps1` | 双浏览器上下文、双人类、双 Agent、共享历史、双方 SSE、viewer 只读 |
+| 迁移重放 | `./scripts/test-migrations.ps1 -Docker` | project_id NOT NULL、007 唯一迁移行、Core 重启重新执行迁移 |
 | Lease | `./scripts/test-lease.ps1` | 停止 Worker 后领取 queued Job，错误 lease 被拒绝 |
 | Health | `./scripts/test-health.ps1` | PostgreSQL 停机 503、恢复 200 |
 
@@ -38,6 +41,8 @@
 21. viewer 可读/可订阅但不能发送、取消或重试；非成员访问 Conversation/Run/SSE 返回 403。
 22. active Run fixture 下发送返回 409；不同 key 的 retry 在 active Run 期间返回 409。
 23. Agent owner 被移出 Project 后，即使 `project_agents` 历史映射仍存在，也不能再执行该 Agent。
+24. 非法 `target_agent_id` 格式返回 400 `VALIDATION_FAILED`。
+25. owner/editor 并发向同一 Conversation 发送时，一个请求成功、另一个返回 409 `CONFLICT`。
 
 ## 3. 工具探测与容器入口
 
@@ -83,4 +88,10 @@ cancel_then_lease_expiry: PASS
 frontend_retry_refresh_reconnect: PASS
 health_503_and_recovery: PASS
 browser ui check: PASS
+frontend_browser_project_first: PASS
+frontend_browser_2h2a: PASS
+viewer_browser_readonly: PASS
+invalid_target_validation: PASS
+concurrent_multiuser_single_active: PASS
+migration_restart_replay: PASS
 ```

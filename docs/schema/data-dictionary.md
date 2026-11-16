@@ -20,7 +20,7 @@
 ## 关键约束
 
 - `messages.client_request_id` 唯一索引为 `(conversation_id, sender_id, client_request_id)`，仅约束用户消息且三者均非空。
-- `conversations.project_id` 在迁移 `006` 中回填并建索引，但暂时保持可空。工程包 C 切换 C++ 写入后，再在独立迁移中收紧为 `NOT NULL`。
+- `conversations.project_id` 由 `006` 回填并建索引，由 `007` 收紧为 `NOT NULL`；兼容 C++ 创建路径会先确保 legacy Project、owner 成员和 Project Agent 映射存在。Project-first 运行权限仍等待工程包 B。
 - `target_agent_id` 是 REST 发送消息请求的必填字段，不新增为 `messages` 列；执行时映射到 `runs.agent_id`。
 - 不建立 `conversation_members`；Project 成员默认可见全部 Conversation。
 - Agent owner 必须是 Project member；只有 owner 自己能把自己的 Agent 加入 Project。

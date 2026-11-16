@@ -25,6 +25,8 @@
 - 暂不强制 `conversations.project_id NOT NULL`，因为当前 C++ 创建路径尚未切换；
 - `NOT NULL` 与写入切换由工程包 B/C 使用后续迁移完成。
 
+工程包 C 独立部分已新增 `007_conversation_project_required.sql`：兼容 C++ 创建路径先确保 legacy Project/membership/Project Agent 映射并写入 `project_id`，随后将列收紧为 `NOT NULL`。Project-first 路由与 Project member 运行时权限仍等待工程包 B。
+
 这是分阶段迁移，不是数据模型变更。
 
 ## 影响

@@ -89,6 +89,28 @@ void require_project_role_value(const std::string& role)
         throw ServiceError(400, "VALIDATION_FAILED", "role must be owner, editor, or viewer");
 }
 
+std::string ensure_legacy_project(PgSession& s, const std::string& user_id, const std::string& agent_id)
+{
+    const std::string project_id = s.query(
+        "SELECT md5('ai-workspace-v2:legacy-project:' || $1::text)::uuid", {user_id}).get(0, 0);
+    s.query(
+        "INSERT INTO projects(id,name,description,status,created_by_user_id) "
+        "SELECT md5('ai-workspace-v2:legacy-project:' || u.id::text)::uuid, "
+        "left('Legacy project - ' || COALESCE(NULLIF(btrim(u.display_name), ''), u.username), 120), "
+        "'Auto-created for legacy single-user conversation compatibility.', 'active', u.id "
+        "FROM users u WHERE u.id=$1 ON CONFLICT (id) DO NOTHING",
+        {user_id});
+    s.query(
+        "INSERT INTO project_members(project_id,user_id,role,added_by_user_id) VALUES($1,$2,'owner',$2) "
+        "ON CONFLICT (project_id,user_id) DO NOTHING",
+        {project_id, user_id});
+    s.query(
+        "INSERT INTO project_agents(project_id,agent_id,added_by_user_id) VALUES($1,$2,$3) "
+        "ON CONFLICT (project_id,agent_id) DO NOTHING",
+        {project_id, agent_id, user_id});
+    return project_id;
+}
+
 } // namespace
 
 CoreService::CoreService(Config config) : config_(std::move(config)), db_(config_.database_url) {}
@@ -549,15 +571,15 @@ Json CoreService::listConversations(const std::string& user_id, const std::strin
 {
     auto s = db_.session();
     auto r = s.query(
-        "SELECT c.id::text,c.agent_id::text,a.name,c.title,c.status,"
+        "SELECT c.id::text,c.agent_id::text,a.name,c.project_id::text,c.title,c.status,"
         "to_char(c.created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),"
         "to_char(c.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') "
         "FROM conversations c JOIN agents a ON a.id=c.agent_id WHERE c.owner_id=$1 ORDER BY c.updated_at DESC", {user_id});
     Json items = Json::array();
     for (int row = 0; row < r.rows(); ++row) {
         items.push_back({{"id", r.get(row, 0)}, {"agent_id", r.get(row, 1)}, {"agent_name", r.get(row, 2)},
-                         {"title", r.get(row, 3)}, {"status", r.get(row, 4)}, {"created_at", r.get(row, 5)},
-                         {"updated_at", r.get(row, 6)}});
+                         {"project_id", r.get(row, 3)}, {"title", r.get(row, 4)}, {"status", r.get(row, 5)},
+                         {"created_at", r.get(row, 6)}, {"updated_at", r.get(row, 7)}});
     }
     return {{"items", items}};
 }
@@ -576,15 +598,18 @@ Json CoreService::createConversation(const std::string& user_id, const Json& bod
     const std::string id = uuid4();
     s.begin();
     try {
+        const std::string project_id = ensure_legacy_project(s, user_id, agent_id);
         auto r = s.query(
-            "INSERT INTO conversations(id,owner_id,agent_id,title) VALUES($1,$2,$3,$4) RETURNING id::text,"
+            "INSERT INTO conversations(id,owner_id,agent_id,project_id,title) VALUES($1,$2,$3,$4,$5) RETURNING id::text,"
             "to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'),"
             "to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')",
-            {id, user_id, agent_id, title});
-        audit(s, "user", user_id, "conversation.create", "conversation", id, "success", request_id);
+            {id, user_id, agent_id, project_id, title});
+        audit(s, "user", user_id, "conversation.create", "conversation", id, "success", request_id,
+              {{"project_id", project_id}});
         s.commit();
-        return {{"id", r.get(0, 0)}, {"agent_id", agent_id}, {"agent_name", agent.get(0, 1)},
-                {"title", title}, {"status", "active"}, {"created_at", r.get(0, 1)}, {"updated_at", r.get(0, 2)}};
+        return {{"id", r.get(0, 0)}, {"project_id", project_id}, {"agent_id", agent_id},
+                {"agent_name", agent.get(0, 1)}, {"title", title}, {"status", "active"},
+                {"created_at", r.get(0, 1)}, {"updated_at", r.get(0, 2)}};
     } catch (...) {
         s.rollback();
         throw;

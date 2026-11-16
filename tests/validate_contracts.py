@@ -13,6 +13,7 @@ SSE = ROOT / "docs" / "contracts" / "sse-events.md"
 ERRORS = ROOT / "docs" / "contracts" / "error-codes.md"
 MIGRATIONS_DIR = ROOT / "db" / "migrations"
 MULTIPLAYER_MIGRATION = MIGRATIONS_DIR / "006_multiplayer_foundation.sql"
+PROJECT_REQUIRED_MIGRATION = MIGRATIONS_DIR / "007_conversation_project_required.sql"
 
 EXPECTED_PATHS = {
     ("/api/v1/auth/login", "post"),
@@ -146,6 +147,7 @@ def main() -> int:
     migrations = sorted(MIGRATIONS_DIR.glob("*.sql"))
     assert migrations, "database migrations are missing"
     assert MULTIPLAYER_MIGRATION in migrations, "multiplayer foundation migration missing"
+    assert PROJECT_REQUIRED_MIGRATION in migrations, "conversation project_id NOT NULL migration missing"
     migration_text = MULTIPLAYER_MIGRATION.read_text(encoding="utf-8")
     for table in ("projects", "project_members", "project_agents"):
         assert f"CREATE TABLE IF NOT EXISTS {table}" in migration_text, f"missing migration table: {table}"
@@ -156,7 +158,16 @@ def main() -> int:
     assert "DROP INDEX IF EXISTS ux_messages_client_request" in normalized_migration, (
         "legacy client request index must be replaced"
     )
-    assert "project_id SET NOT NULL" not in normalized_migration, "project_id NOT NULL must remain deferred"
+    assert "project_id SET NOT NULL" not in normalized_migration, "project_id NOT NULL must remain deferred in 006"
+    required_migration = PROJECT_REQUIRED_MIGRATION.read_text(encoding="utf-8")
+    normalized_required = " ".join(required_migration.split())
+    assert "ALTER TABLE conversations ALTER COLUMN project_id SET NOT NULL" in normalized_required, (
+        "007 must enforce conversations.project_id NOT NULL"
+    )
+    required_version = re.search(r"schema_migrations\(version\) VALUES \('([^']+)'\)", required_migration)
+    assert required_version and len(required_version.group(1)) <= 32, (
+        "migration version must fit schema_migrations.version VARCHAR(32)"
+    )
 
     text_corpus = "\n".join(p.read_text(encoding="utf-8") for p in [OPENAPI, PROTO, SSE, ERRORS])
     assert "sk-" not in text_corpus, "possible API key entered the contract tree"

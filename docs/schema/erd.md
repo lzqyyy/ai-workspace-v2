@@ -1,7 +1,7 @@
 # 数据库 ER 设计 V1.1.0
 
 - 数据库：PostgreSQL 16+
-- 迁移：`db/migrations/001_init.sql` 至 `006_multiplayer_foundation.sql`
+- 迁移：`db/migrations/001_init.sql` 至 `007_conversation_project_required.sql`
 - 唯一业务写入者：C++ Core
 - Worker 禁止连接 PostgreSQL
 
@@ -51,14 +51,13 @@ erDiagram
 
 ## 3. 分阶段迁移边界
 
-`006_multiplayer_foundation.sql` 只做增量数据冻结与回填：
+`006_multiplayer_foundation.sql` 完成增量数据冻结与回填：
 
 - 为已有 Agent/Conversation owner 创建确定性 legacy Project；
 - 写入 owner 成员关系与 Project Agent 映射；
-- 回填 `conversations.project_id`；
-- 暂不将 `conversations.project_id` 设为 `NOT NULL`，因为现有 C++ 创建会话路径尚未切换到 Project。
+- 回填 `conversations.project_id`。
 
-`conversations.project_id NOT NULL` 与业务写入切换属于工程包 C，不属于模型变更。工程包 B 不修改旧 Conversation 创建路径；迁移不得删除现有数据，也不得修改 `001` 至 `005`。
+工程包 C 的 `007_conversation_project_required.sql` 在兼容 Conversation 写入已切换为始终提供 `project_id` 后，将 `conversations.project_id` 收紧为 `NOT NULL`。Project-first Conversation 路由、Project membership 运行权限与单 active Run 事务仍等待工程包 B 提供成员/Agent 授权上下文后合入。迁移不得删除现有数据，也不得修改 `001` 至 `006`。
 
 ## 4. 权限查询约束
 

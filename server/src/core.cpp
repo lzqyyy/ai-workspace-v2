@@ -140,7 +140,7 @@ void CoreService::require_uuid(const std::string& value, const std::string& fiel
 void CoreService::require_text(const std::string& value, const std::string& field, std::size_t max_length)
 {
     if (trim(value).empty()) throw ServiceError(400, "VALIDATION_FAILED", field + " is required");
-    if (value.size() > max_length) throw ServiceError(400, "VALIDATION_FAILED", field + " is too long");
+    if (utf8_codepoint_length(value) > max_length) throw ServiceError(400, "VALIDATION_FAILED", field + " is too long");
 }
 
 bool CoreService::retryable_error(const std::string& code)
@@ -217,7 +217,7 @@ Json CoreService::login(const std::string& username, const std::string& password
 {
     require_text(username, "username", 80);
     require_text(password, "password", 200);
-    if (password.size() < 8) throw ServiceError(400, "VALIDATION_FAILED", "password must be at least 8 characters");
+    if (utf8_codepoint_length(password) < 8) throw ServiceError(400, "VALIDATION_FAILED", "password must be at least 8 characters");
     auto s = db_.session();
     auto r = s.query("SELECT id::text,password_hash,display_name,status FROM users WHERE lower(username)=lower($1) LIMIT 1", {username});
     if (r.rows() != 1 || r.get(0, 3) != "active" || !verify_password(password, r.get(0, 1))) {
@@ -286,11 +286,11 @@ Json CoreService::createAgent(const std::string& user_id, const Json& body, cons
     const std::string name = json_string(body, "name");
     const std::string system_prompt = json_string(body, "system_prompt");
     require_text(name, "name", 80);
-    if (system_prompt.size() > 8000) throw ServiceError(400, "VALIDATION_FAILED", "system_prompt is too long");
+    if (utf8_codepoint_length(system_prompt) > 8000) throw ServiceError(400, "VALIDATION_FAILED", "system_prompt is too long");
     if (body.contains("avatar") && !body["avatar"].is_null() && !body["avatar"].is_string())
         throw ServiceError(400, "VALIDATION_FAILED", "avatar must be a string or null");
     const std::string avatar = body.contains("avatar") && body["avatar"].is_string() ? body["avatar"].get<std::string>() : "";
-    if (avatar.size() > 500000) throw ServiceError(400, "VALIDATION_FAILED", "avatar is too long");
+    if (utf8_codepoint_length(avatar) > 500000) throw ServiceError(400, "VALIDATION_FAILED", "avatar is too long");
     auto s = db_.session();
     PgResult provider;
     if (body.contains("model_provider_id") && !body["model_provider_id"].is_null()) {
@@ -341,7 +341,7 @@ Json CoreService::createProject(const std::string& user_id, const Json& body, co
         if (!body["description"].is_string())
             throw ServiceError(400, "VALIDATION_FAILED", "description must be a string or null");
         description = body["description"].get<std::string>();
-        if (description.get<std::string>().size() > 20000)
+        if (utf8_codepoint_length(description.get<std::string>()) > 20000)
             throw ServiceError(400, "VALIDATION_FAILED", "description is too long");
     }
 
@@ -494,8 +494,9 @@ void CoreService::removeProjectMember(const std::string& user_id, const std::str
         auto active = s.query(
             "SELECT 1 FROM runs r JOIN conversations c ON c.id=r.conversation_id "
             "JOIN messages m ON m.id=r.trigger_message_id "
-            "WHERE c.project_id=$1 AND m.sender_type='user' AND m.sender_id=$2 "
-            "AND r.status IN ('queued','running') LIMIT 1",
+            "JOIN agents a ON a.id=r.agent_id "
+            "WHERE c.project_id=$1 AND m.sender_type='user' "
+            "AND (m.sender_id=$2 OR a.owner_id=$2) AND r.status IN ('queued','running') LIMIT 1",
             {project_id, target_user_id});
         if (active.rows() == 1)
             throw ServiceError(409, "CONFLICT", "member has an active run in this project");
@@ -730,14 +731,14 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
     const std::string target_agent_id = json_string(body, "target_agent_id");
     require_text(content, "content", 32000);
     require_uuid(target_agent_id, "target_agent_id");
-    if (!client_request_id.empty() && (client_request_id.size() < 8 || client_request_id.size() > 100))
+    if (!client_request_id.empty() && (utf8_codepoint_length(client_request_id) < 8 || utf8_codepoint_length(client_request_id) > 100))
         throw ServiceError(400, "VALIDATION_FAILED", "client_request_id must be 8-100 characters");
 
     auto s = db_.session();
     s.begin();
     try {
         const std::string duplicate_sql = std::string("SELECT ") + kMessageColumns +
-            ",r.id::text,r.status FROM messages m JOIN runs r ON r.trigger_message_id=m.id "
+            ",r.id::text,r.status FROM messages m JOIN runs r ON r.id=m.run_id "
             "WHERE m.conversation_id=$1 AND m.sender_id=$2 AND m.client_request_id=$3 "
             "AND m.sender_type='user' LIMIT 1";
         auto duplicate_json = [](PgResult& existing) {
@@ -828,7 +829,7 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
                             const std::string& idempotency_key, const std::string& request_id)
 {
     require_uuid(run_id, "run_id");
-    if (!idempotency_key.empty() && (idempotency_key.size() < 8 || idempotency_key.size() > 100))
+    if (!idempotency_key.empty() && (utf8_codepoint_length(idempotency_key) < 8 || utf8_codepoint_length(idempotency_key) > 100))
         throw ServiceError(400, "VALIDATION_FAILED", "Idempotency-Key must be 8-100 characters");
 
     auto s = db_.session();
@@ -914,6 +915,7 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
         s.query("INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status) "
                 "VALUES($1,$2,$3,$4,$5,'queued')",
                 {new_run_id, conversation_id, old.get(0, 0), old.get(0, 2), provider_id});
+        s.query("UPDATE messages SET run_id=$1 WHERE id=$2", {new_run_id, old.get(0, 2)});
         s.query("INSERT INTO jobs(id,run_id,status) VALUES($1,$2,'queued')", {job_id, new_run_id});
         if (!idempotency_key.empty()) {
             auto claimed = s.query(
@@ -1074,7 +1076,7 @@ Json CoreService::claimNextJob(const std::string& worker_id, const std::string& 
             const int attempt = std::stoi(r.get(0, 2));
             const int max_attempts = std::stoi(r.get(0, 3));
             const std::string status = r.get(0, 4);
-            if (r.get(0, 5) == "t") {
+            if (r.get(0, 6) == "t") {
                 auto next = s.query("SELECT COALESCE(MAX(seq),0)+1 FROM run_events WHERE run_id=$1", {run_id});
                 s.query("UPDATE jobs SET status='cancelled',lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1", {job_id});
                 s.query("UPDATE runs SET status='cancelled',error_code='RUN_CANCELLED',cancel_requested=true,finished_at=now() WHERE id=$1", {run_id});
@@ -1235,7 +1237,7 @@ Json CoreService::updateJobStatus(const std::string& job_id, const std::string& 
         throw ServiceError(400, "VALIDATION_FAILED", "unsupported terminal job status");
     if (status == "failed" && !kAllowedErrors.contains(error_code))
         throw ServiceError(400, "VALIDATION_FAILED", "unsupported worker error code");
-    if (final_content.size() > 200000)
+    if (utf8_codepoint_length(final_content) > 200000)
         throw ServiceError(400, "VALIDATION_FAILED", "final content is too large");
     Json usage = Json::object();
     if (!usage_json.empty()) {

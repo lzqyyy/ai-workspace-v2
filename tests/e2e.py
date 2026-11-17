@@ -76,7 +76,9 @@ def main():
     demo=Client();user=login(demo,origin='http://localhost:8080')
     assert demo.request('GET','/api/v1/health')['status']=='ok'
     expect_validation(demo,'POST','/api/v1/agents',{'name':123,'system_prompt':'x'});expect_validation(demo,'POST','/api/v1/agents',{'name':'x','system_prompt':123});expect_validation(demo,'POST','/api/v1/agents',{'name':'x','system_prompt':'x','unexpected':True});expect_validation(demo,'POST','/api/v1/agents',{'name':'x','avatar':'a'*500001})
-    agent=demo.request('POST','/api/v1/agents',{'name':f'E2E Agent {uuid.uuid4().hex[:6]}','system_prompt':'Return a concise end-to-end response.'})
+    unicode_agent_name=f'unicode-{uuid.uuid4().hex[:8]}-'+'界'*60
+    expect_validation(demo,'POST','/api/v1/agents',{'name':'界'*81,'system_prompt':'x'})
+    agent=demo.request('POST','/api/v1/agents',{'name':unicode_agent_name,'system_prompt':'Return a concise end-to-end response.'})
     invalid_uuid='zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz'
     expect_validation(demo,'GET',f'/api/v1/projects/{invalid_uuid}',None)
     expect_validation(demo,'POST','/api/v1/conversations',{'agent_id':123,'title':'bad'});expect_validation(demo,'POST','/api/v1/conversations',{'agent_id':agent['id'],'title':123});expect_validation(demo,'POST','/api/v1/conversations',{'agent_id':agent['id'],'title':'bad','unexpected':True})
@@ -109,6 +111,6 @@ def main():
     retried_other=demo.request('POST',f'/api/v1/runs/{cancel_run_id}/retry',headers={'Idempotency-Key':f'e2e-retry-other-{uuid.uuid4()}'});assert retried_other['run_id']!=retried['run_id'] and retried_other['duplicate'] is False
     retry_other_events=demo.events(retried_other['run_id']);assert retry_other_events[-1]['type']=='message.completed',retry_other_events[-1]
     retried_again=demo.request('POST',f'/api/v1/runs/{cancel_run_id}/retry',headers={'Idempotency-Key':retry_key});assert retried_again['run_id']==retried['run_id'] and retried_again['duplicate'] is True
-    after_retry=demo.request('GET',f'/api/v1/conversations/{cid}/messages')['items'];assert all(any(item['sender_type']=='agent' and item['run_id']==retry_run_id for item in after_retry) for retry_run_id in (retried['run_id'],retried_other['run_id']))
-    print(json.dumps({'status':'PASS','user':user['username'],'conversation_id':cid,'first_run_id':run_id,'event_count':len(events),'validation_types':'PASS','unknown_fields_and_lengths':'PASS','concurrent_send_idempotency':'PASS','duplicate_callback':'PASS','sse_replay':'PASS','cross_user_denied':'PASS','retry_idempotency':'PASS','cancel_and_retry':'PASS'},ensure_ascii=False));return 0
+    after_retry=demo.request('GET',f'/api/v1/conversations/{cid}/messages')['items'];assert all(any(item['sender_type']=='agent' and item['run_id']==retry_run_id for item in after_retry) for retry_run_id in (retried['run_id'],retried_other['run_id']));trigger_messages=[item for item in after_retry if item['sender_type']=='user' and item['content']=='这条消息将被立即取消'];assert len(trigger_messages)==1 and trigger_messages[0]['run_id']==retried_other['run_id'],trigger_messages
+    print(json.dumps({'status':'PASS','user':user['username'],'conversation_id':cid,'first_run_id':run_id,'event_count':len(events),'validation_types':'PASS','unknown_fields_and_lengths':'PASS','unicode_codepoint_validation':'PASS','concurrent_send_idempotency':'PASS','duplicate_callback':'PASS','sse_replay':'PASS','cross_user_denied':'PASS','retry_idempotency':'PASS','cancel_and_retry':'PASS'},ensure_ascii=False));return 0
 if __name__=='__main__':sys.exit(main())

@@ -74,4 +74,4 @@ erDiagram
 
 ## 5. 当前实现状态
 
-工程包 B/C 已实现 Project、ProjectMember、ProjectAgent 路由、角色授权、最后 owner 保护和 active Run 移除保护，以及共享 Conversation、`target_agent_id` 发送、Conversation/Message/Run/SSE 的 Project 授权。2H+2A、viewer 只读、非成员 403、active Run 409、sender-scoped 幂等和单用户回归已由 Docker E2E 覆盖。前端尚未接入 Project-first 路由与 `target_agent_id`。
+工程包 B/C 已实现 Project、ProjectMember、ProjectAgent 路由、角色授权、最后 owner 保护和 active Run 移除保护，以及共享 Conversation、`target_agent_id` 发送、Conversation/Message/Run/SSE 的 Project 授权。2H+2A、viewer 只读、非成员 403、active Run 409、sender-scoped 幂等和单用户回归已由 Docker E2E 覆盖。原生前端已接入 Project-first 路由与必填 `target_agent_id`，单用户与 2H+2A 浏览器 E2E 均已通过。

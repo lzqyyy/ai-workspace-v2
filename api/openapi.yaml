@@ -6,7 +6,7 @@ info:
     Frozen REST contract between the native browser client and the C++ core.
     All API requests are same-origin and authenticated by an HttpOnly session cookie.
     Mutating requests must include `X-Request-ID`; EventSource passes `request_id` as a query parameter.
-    Project-first routes are frozen in this package; their C++ handlers are delivered by later packages.
+    Project-first routes are frozen and implemented by the C++ core; the native browser client also uses these routes.
     Non-members receive 403. The MVP PRD defines Project archive semantics, but no Project archive operation is frozen in this OpenAPI; do not infer a route or method until a versioned contract change adds one.
 servers:
   - url: http://localhost:8080

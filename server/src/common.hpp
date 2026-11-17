@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <iomanip>
 #include <initializer_list>
@@ -81,6 +82,46 @@ inline std::string trim(std::string value)
     value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
     value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
     return value;
+}
+
+inline std::size_t utf8_codepoint_length(std::string_view value)
+{
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < value.size();) {
+        const auto lead = static_cast<unsigned char>(value[i]);
+        std::size_t width = 0;
+        std::uint32_t codepoint = 0;
+        if (lead <= 0x7f) {
+            width = 1;
+            codepoint = lead;
+        } else if ((lead & 0xe0) == 0xc0) {
+            width = 2;
+            codepoint = lead & 0x1f;
+        } else if ((lead & 0xf0) == 0xe0) {
+            width = 3;
+            codepoint = lead & 0x0f;
+        } else if ((lead & 0xf8) == 0xf0) {
+            width = 4;
+            codepoint = lead & 0x07;
+        }
+        if (width == 0 || i + width > value.size())
+            throw ServiceError(400, "VALIDATION_FAILED", "invalid UTF-8");
+        for (std::size_t j = 1; j < width; ++j) {
+            const auto continuation = static_cast<unsigned char>(value[i + j]);
+            if ((continuation & 0xc0) != 0x80)
+                throw ServiceError(400, "VALIDATION_FAILED", "invalid UTF-8");
+            codepoint = (codepoint << 6) | (continuation & 0x3f);
+        }
+        if ((width == 2 && codepoint < 0x80) ||
+            (width == 3 && codepoint < 0x800) ||
+            (width == 4 && codepoint < 0x10000) ||
+            codepoint > 0x10ffff ||
+            (codepoint >= 0xd800 && codepoint <= 0xdfff))
+            throw ServiceError(400, "VALIDATION_FAILED", "invalid UTF-8");
+        i += width;
+        ++count;
+    }
+    return count;
 }
 
 inline std::string json_string(const Json& body, const std::string& field, std::string fallback = {})

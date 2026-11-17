@@ -36,4 +36,5 @@
 - Project 成员/Agent 关键写操作和权限拒绝写入脱敏审计，只包含资源 ID、角色、动作、结果和 `request_id`。
 - Agent 所有权继续由 `agents.owner_id` 表示，不因加入 Project 转让。
 - 前端权限状态仅用于交互，任何权限判断都不以前端缓存为依据。
+- Project 归档语义来自最小 MVP PRD，但当前冻结 OpenAPI 没有归档 operation，运行时也没有入口；不得由客户端自行推断路由或方法。
 - 生产必须在 HTTPS 反向代理后运行。

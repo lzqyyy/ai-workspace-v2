@@ -8,6 +8,12 @@
 - 开始时间：2026-11-16
 - 完成时间：2026-11-16
 
+## 后续状态（2026-11-17）
+
+- Package F 的实际提交为 `f78df9c`；随后以 `fe6b7c0` 完成 MVP 合并审查阻塞修复。
+- 本交接记录的是收口时状态；当前分支已推送至 `origin`，但仍未合并 `main`，`V0.2.0` 尚未创建 tag。
+- 当前事实以 `docs/acceptance/V0.2-multiplayer-mvp.md`、`README.md`、`AGENTS.md` 和 `docs/TASK_BOARD.md` 为准。
+
 ## 目标
 
 在不新增业务功能的前提下完成 D/E/F 最小 MVP 交付收口：Docker-first 启动与演示、2H+2A 演示数据/账号、验收入口、截图与 health 证据、Runbook、任务看板、AGENTS 当前事实和最终交接。所有提交保持本地，不 push、不合并 main。

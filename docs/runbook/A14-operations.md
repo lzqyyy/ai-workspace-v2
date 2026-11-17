@@ -72,7 +72,7 @@ curl.exe http://localhost:8080/api/v1/health
 | 现象 | 检查 |
 |---|---|
 | 401 | Cookie 是否被浏览器接受；`APP_ORIGIN` 是否与访问源一致 |
-| 403 | 资源是否属于当前用户；写入请求 Origin 是否允许 |
+| 403 | 当前用户是否为资源所属 Project 的成员、角色是否允许该操作；写入请求 Origin 是否允许 |
 | 任务长期 queued | Worker 日志、`GRPC_ADDR`、50051 内部连通性 |
 | SSE 不流动 | 反向代理是否关闭 buffering；Curl 是否可读到 chunk |
 | 任务卡 running | 查看 `jobs.lease_until`；超过 30 秒后应被下一 Worker 回收 |

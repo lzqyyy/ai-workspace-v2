@@ -8,7 +8,8 @@ agent_contract:
   canonical_branch: main
   remote: origin
   current_release: v0.1.0
-  current_scope: L0 + L1 + minimal multiplayer MVP
+  current_candidate: "V0.2.0 (REVIEW, not merged to main)"
+  current_scope: L0 + L1 + minimal multiplayer MVP (Project/ProjectMember/shared Conversation/2H+2A)
   auto_sync_skill: .agents/skills/github-auto-sync/SKILL.md
   auto_approval_skill: .agents/skills/project-auto-approval/SKILL.md
   codex_project_config: .codex/config.toml
@@ -255,7 +256,7 @@ python tests/e2e.py
 - 本地 PostgreSQL：`127.0.0.1:55432`，数据库 `workspace`。
 - Docker PostgreSQL：内部 `postgres:5432`，不发布宿主机端口。
 - 迁移入口：`db/migrations/*.sql`，由 C++ 启动时执行。
-- 当前迁移：`001_init` 到 `004_demo_password`。
+- 当前迁移：`001_init` 到 `007_conversation_project_required`。
 - 所有迁移必须可重复执行并记录 `schema_migrations`。
 - 不得提交数据库数据、WAL、日志、`pgdata/` 或 `.env`。
 - 破坏性变更必须先写 ADR。

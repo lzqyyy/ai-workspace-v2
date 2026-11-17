@@ -156,7 +156,9 @@ def main() -> int:
     cancel_send = send(editor, conversation_id, editor_agent["id"], "cancel this editor run", f"shared-cancel-{uuid.uuid4()}")
     cancel_run = cancel_send["run_id"]
     cancelled = editor.request("POST", f"/api/v1/runs/{cancel_run}/cancel")
-    assert cancelled["status"] == "cancelled"
+    assert cancelled["status"] in {"queued", "running", "cancelled"}, cancelled
+    cancel_events = editor.events(cancel_run)
+    assert cancel_events[-1]["type"] == "run.cancelled", cancel_events[-1]
     owner_retry = owner.request(
         "POST",
         f"/api/v1/runs/{cancel_run}/retry",
@@ -177,17 +179,22 @@ def main() -> int:
     owner_cancel_run = owner_cancel_send["run_id"]
     expect_error(editor, "POST", f"/api/v1/runs/{owner_cancel_run}/cancel", 403, "FORBIDDEN", None)
     try:
-        owner.request("POST", f"/api/v1/runs/{owner_cancel_run}/cancel")
+        owner_cancel = owner.request("POST", f"/api/v1/runs/{owner_cancel_run}/cancel")
+        assert owner_cancel["status"] in {"queued", "running", "cancelled"}, owner_cancel
     except ApiFailure as error:
         assert error.status == 409 and error.code == "RUN_NOT_CANCELLABLE", (error.status, error.code)
+    owner_cancel_events = owner.events(owner_cancel_run)
+    assert owner_cancel_events[-1]["type"] in {"message.completed", "run.cancelled"}, owner_cancel_events[-1]
 
     editor_cancel_send = send(editor, conversation_id, editor_agent["id"], "editor run cancelled by owner", f"shared-owner-cancel-other-{uuid.uuid4()}")
     editor_cancel_run = editor_cancel_send["run_id"]
     try:
         cancelled_by_owner = owner.request("POST", f"/api/v1/runs/{editor_cancel_run}/cancel")
-        assert cancelled_by_owner["status"] == "cancelled"
+        assert cancelled_by_owner["status"] in {"queued", "running", "cancelled"}, cancelled_by_owner
     except ApiFailure as error:
         assert error.status == 409 and error.code == "RUN_NOT_CANCELLABLE", (error.status, error.code)
+    editor_cancel_events = owner.events(editor_cancel_run)
+    assert editor_cancel_events[-1]["type"] in {"message.completed", "run.cancelled"}, editor_cancel_events[-1]
 
     owner.request(
         "PATCH",

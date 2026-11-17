@@ -2,6 +2,8 @@
 
 本仓交付当前最小 MVP：两个人类与两个 Agent 在同一 Project、同一共享 Conversation 中协作。浏览器只连接 C++ Core，C++ 是唯一 PostgreSQL 业务写入者，Go Worker 通过 gRPC 领取 Job 并执行 Mock/兼容模型流式调用。
 
+当前状态：`V0.2.0` 候选为 `REVIEW`；分支已推送 `origin`，尚未合并 `main`，尚未创建 `V0.2.0` tag。验收事实见 `docs/acceptance/V0.2-multiplayer-mvp.md`。
+
 ```text
 Browser -> C++ HTTP/SSE :8080 -> PostgreSQL :5432
                          \-> gRPC :50051 -> Go Worker -> model HTTPS / mock model

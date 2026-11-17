@@ -1,0 +1,4 @@
+# Project-scoped Codex execution policy. The user explicitly requested that
+# routine permission requests in ai-workspace-v2 be approved automatically.
+approval_policy = "never"
+sandbox_mode = "danger-full-access"

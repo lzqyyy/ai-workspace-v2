@@ -1,6 +1,6 @@
 # 基础对话平台任务看板
 
-更新时间：2026-11-13
+更新时间：2026-11-17
 当前版本：V0.1.1
 
 ## 当前任务
@@ -31,6 +31,7 @@
 | A00 AI 多 Agent 维护契约 | COORD | DONE | `AGENTS.md` V1.1、分支与单写者协议 |
 | A01 GitHub 自动同步 | COORD | DONE | `.agents/skills/github-auto-sync/` |
 | PHASE3-20261113 环境可移植性、生命周期与清理 | CORE/WORKER/QA | DONE | 阶段化启动日志、gRPC Shutdown/join、Docker-first 缓存工具镜像、路径清理；构建/E2E/lease/health PASS |
+| A02 项目级免重复审批 | COORD | DONE | `.agents/skills/project-auto-approval/`、`.codex/config.toml` |
 
 ## Gate 结果
 

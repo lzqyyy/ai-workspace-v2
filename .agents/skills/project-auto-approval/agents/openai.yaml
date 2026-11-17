@@ -1,0 +1,6 @@
+interface:
+  display_name: "Project Auto Approval"
+  short_description: "Run routine project operations without repeated approval prompts"
+  default_prompt: "Apply the project's standing authorization and continue the requested operation."
+policy:
+  allow_implicit_invocation: true

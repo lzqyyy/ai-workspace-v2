@@ -25,7 +25,7 @@ const state = {
   user: null, projects: [], project: null, role: null, members: [], projectAgents: [], ownedAgents: [],
   conversations: [], activeConversation: null, messages: [], targetAgentId: null, run: null, eventSource: null,
   lastRunId: null, lastRunOwnerId: null, terminalRuns: new Set(), retrying: false, sending: false,
-  cancelling: false, retryVisible: false, pollTimer: null, toastTimer: null
+  cancelling: false, retryVisible: false, pollTimer: null, messageLoadSeq: 0, toastTimer: null
 };
 
 class ApiError extends Error {
@@ -267,11 +267,12 @@ function scrollToBottom() { requestAnimationFrame(() => { const stage = $('messa
 
 async function loadMessages(showError = true) {
   const conversationId = state.activeConversation?.id; if (!conversationId) return false;
+  const loadSeq = ++state.messageLoadSeq;
   try {
     const response = await api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`);
-    if (state.activeConversation?.id !== conversationId) return false;
+    if (loadSeq !== state.messageLoadSeq || state.activeConversation?.id !== conversationId) return false;
     state.messages = response.items || []; const discovered = discoverRunFromMessages(); renderMessages(); return discovered;
-  } catch (error) { if (showError && state.activeConversation?.id === conversationId) setError(error.message, error.retryable); return false; }
+  } catch (error) { if (loadSeq === state.messageLoadSeq && showError && state.activeConversation?.id === conversationId) setError(error.message, error.retryable); return false; }
 }
 function discoverRunFromMessages() {
   if (state.run || !state.activeConversation) return false;

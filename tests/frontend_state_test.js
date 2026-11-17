@@ -207,12 +207,23 @@ vm.runInContext(fs.readFileSync('frontend/app.js', 'utf8'), context);
   let pollCallback = null;
   context.setInterval = (callback) => { pollCallback = callback; return 1; };
   vm.runInContext(`
-    document.hidden = true; state.pollTimer = null; state.activeConversation = {id:'conversation-hidden'}; __pollLoads = 0;
+    document.hidden = true; state.pollTimer = null; state.activeConversation = {id:'conversation-hidden'}; __pollLoads = 0; __originalLoadMessages = loadMessages;
     loadMessages = async () => { __pollLoads += 1; return false; }; startPolling();
   `, context);
   assert.ok(pollCallback, 'active conversation must schedule background discovery polling');
   await pollCallback();
   assert.strictEqual(vm.runInContext('__pollLoads', context), 1, 'hidden pages must continue shared message discovery');
 
-  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, background_polling:true, sse_reconnect:true, sse_dedupe:true}));
+  vm.runInContext(`
+    state.activeConversation = {id:'conversation-race'}; state.run = null; state.messages = []; state.messageLoadSeq = 0; loadMessages = __originalLoadMessages;
+    __loadResolvers = []; renderMessages = () => {}; api = () => new Promise((resolve) => __loadResolvers.push(resolve));
+    __loadFirst = loadMessages(false); __loadSecond = loadMessages(false);
+  `, context);
+  context.__loadResolvers[1]({items:[{id:'newer'}]});
+  await context.__loadSecond;
+  context.__loadResolvers[0]({items:[{id:'older'}]});
+  await context.__loadFirst;
+  assert.deepStrictEqual(Array.from(vm.runInContext('state.messages.map((message) => message.id)', context)), ['newer'], 'older message response must not overwrite newer history');
+
+  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true}));
 })().catch((error) => { console.error(error); process.exitCode = 1; });

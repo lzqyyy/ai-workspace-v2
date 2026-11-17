@@ -39,6 +39,7 @@
 | PACKAGE-F-20261116 交付、演示与交接 | QA/COORD | REVIEW | Docker-first demo seed、2H+2A 手工/自动验收入口、健康证据、Runbook、验收记录与最终交接 |
 | HOTFIX-20261116 MVP 合并审查阻塞 | CORE/QA | REVIEW | UUID 严格格式校验、双独立浏览器 2H+2A 竞态修复、Project 归档契约缺口记录；全量/浏览器/health PASS |
 | A02 项目级免重复审批 | COORD | DONE | .agents/skills/project-auto-approval/、.codex/config.toml |
+| HOTFIX-20261117 共享历史轮询竞态 | WEB/QA | REVIEW | 防止较早的慢响应覆盖较新的共享消息快照；修复 Windows 浏览器 profile 清理误报；全量/浏览器 PASS |
 
 ## Gate 结果
 

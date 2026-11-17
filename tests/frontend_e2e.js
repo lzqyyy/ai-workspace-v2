@@ -16,6 +16,8 @@ const browserPath = process.env.BROWSER_BIN || [
 if (!browserPath) throw new Error('No Edge/Chrome binary found; set BROWSER_BIN.');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function stopBrowser(browser) { await new Promise((resolve) => { if (browser.exitCode !== null) return resolve(); const timer = setTimeout(resolve, 2000); browser.once('exit', () => { clearTimeout(timer); resolve(); }); try { browser.kill(); } catch { clearTimeout(timer); resolve(); } }); }
+function removeProfile(profile) { try { fs.rmSync(profile, {recursive:true, force:true, maxRetries:10, retryDelay:200}); } catch (error) { console.error('warning: browser profile cleanup failed:', error.message); } }
 
 class CDP {
   constructor(url) { this.url = url; this.id = 0; this.pending = new Map(); this.exceptions = []; }
@@ -161,8 +163,7 @@ class CDP {
     console.log(JSON.stringify({status: 'PASS', project: result.project, conversation: result.title, role: result.role, message_count: result.messageCount, run_state: result.runState, screenshot: screenshotPath}));
   } finally {
     try { cdp?.close(); } catch {}
-    browser.kill();
-    await sleep(250);
-    fs.rmSync(profile, {recursive: true, force: true});
+    await stopBrowser(browser);
+    removeProfile(profile);
   }
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

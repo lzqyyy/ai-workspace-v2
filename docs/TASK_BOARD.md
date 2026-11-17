@@ -1,6 +1,6 @@
 # 基础对话平台任务看板
 
-更新时间：2026-11-16
+更新时间：2026-11-17
 当前版本：V0.2.0
 
 ## 当前任务
@@ -38,6 +38,7 @@
 | PACKAGE-E-20261116 2H+2A 验收与稳定性 | QA/CORE | REVIEW | 双浏览器 owner/editor + 两 Agent 同会话、双方 SSE、权限矩阵、并发 409、幂等、迁移重放；Docker-first 全量 PASS |
 | PACKAGE-F-20261116 交付、演示与交接 | QA/COORD | REVIEW | Docker-first demo seed、2H+2A 手工/自动验收入口、健康证据、Runbook、验收记录与最终交接 |
 | HOTFIX-20261116 MVP 合并审查阻塞 | CORE/QA | REVIEW | UUID 严格格式校验、双独立浏览器 2H+2A 竞态修复、Project 归档契约缺口记录；全量/浏览器/health PASS |
+| A02 项目级免重复审批 | COORD | DONE | .agents/skills/project-auto-approval/、.codex/config.toml |
 
 ## Gate 结果
 

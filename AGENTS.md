@@ -10,6 +10,8 @@ agent_contract:
   current_release: v0.1.0
   current_scope: L0 + L1 + minimal multiplayer MVP
   auto_sync_skill: .agents/skills/github-auto-sync/SKILL.md
+  auto_approval_skill: .agents/skills/project-auto-approval/SKILL.md
+  codex_project_config: .codex/config.toml
   language: zh-CN
 ```
 
@@ -125,6 +127,7 @@ Model API
 | `docs/handoffs/` | 跨 Agent 交接事实 | 任务主责 |
 | `docs/TASK_BOARD.md` | 任务状态与责任 | COORD |
 | `.agents/skills/github-auto-sync/` | 自动提交推送流程 | COORD |
+| `.agents/skills/project-auto-approval/` | 项目内免重复审批工作流 | COORD |
 
 生成代码：
 
@@ -294,6 +297,16 @@ python tests/e2e.py
 - 测试失败、发现密钥、范围不明、远端冲突时停止并保留现场。
 
 纯读取任务或无 tracked file 变化时，不创建空提交。
+
+## 12.1 项目级权限批准策略
+
+用户已明确授权：在 `ai-workspace-v2` 项目内执行常规读取、写入、依赖/工具安装、本地进程启停、必要的出站网络访问、测试、构建和已授权 Git 操作时，不逐次申请权限。
+
+- 项目配置：`.codex/config.toml`
+- 工作流 skill：`.agents/skills/project-auto-approval/SKILL.md`
+- 配置值：`approval_policy = "never"`、`sandbox_mode = "danger-full-access"`
+- 新建或重启项目会话后配置才可能生效；不得声称当前已运行会话会自动重载配置。
+- 授权仅限本仓库。其他仓库、全局 Codex 配置、生产系统、凭据披露以及与当前任务无关的不可逆操作仍不在授权范围内。
 
 ## 13. 交接文件模板
 

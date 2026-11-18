@@ -32,6 +32,7 @@
 | A01 GitHub 自动同步 | COORD | DONE | `.agents/skills/github-auto-sync/` |
 | PHASE3-20261113 环境可移植性、生命周期与清理 | CORE/WORKER/QA | DONE | 阶段化启动日志、gRPC Shutdown/join、Docker-first 缓存工具镜像、路径清理；构建/E2E/lease/health PASS |
 | A02 项目级免重复审批 | COORD | DONE | `.agents/skills/project-auto-approval/`、`.codex/config.toml` |
+| HOTFIX-20261118 SSE 事件序号连续性 | CORE/QA | REVIEW | appendEvent 强制连续序号；乱序/跳号负向测试；Docker 全量验证 PASS |
 
 ## Gate 结果
 

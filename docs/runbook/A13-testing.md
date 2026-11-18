@@ -11,6 +11,7 @@
 | 前端状态 | `node tests/frontend_state_test.js` | Retry 防重复、刷新恢复、SSE 游标与完成态 |
 | E2E | `./scripts/e2e.ps1` 或 `./scripts/e2e.ps1 -Docker` | 登录、Agent、会话、发送、SSE、落库、幂等、取消、重试、越权 |
 | Lease | `./scripts/test-lease.ps1` | 停止 Worker 后领取 queued Job，错误 lease 被拒绝 |
+| 事件序号 | `./scripts/test-lease.ps1` | 跳号/乱序被拒绝，重复事件仍幂等 |
 | Health | `./scripts/test-health.ps1` | PostgreSQL 停机 503、恢复 200 |
 
 ## 2. E2E 覆盖
@@ -43,6 +44,7 @@
 
 - `./scripts/test-lease.ps1`：停止 Worker，使用 gRPC 测试程序领取 queued Job，先以错误 lease 调 `UpdateJobStatus` 并断言 `JOB_LEASE_INVALID`，再用正确 lease 取消清理；随后领取另一 Job、通过 REST 请求取消并等待 lease 过期，断言终态为 `cancelled`、无 `MODEL_TIMEOUT` 且无 assistant 消息；最后恢复 Worker。
 - `./scripts/test-health.ps1`：在 Compose 环境中停/启 PostgreSQL，验证 `/api/v1/health` 的状态码和响应体。
+- `tests/event_seq_guard.py`：停止 Worker 后领取 queued Job，验证 `event_seq` 跳号/乱序返回 `CONFLICT`，同一事件重复投递仍返回 `duplicate=true`，最后取消 Run。
 
 ## 5. 手动验收
 
@@ -50,7 +52,7 @@
 - 运行中取消，页面显示已取消，不继续增长。
 - SSE 网络断开后恢复，页面补齐事件且不重复最终消息。
 - 刷新页面，历史消息仍在；未完成 Run 恢复订阅。
-- 在窄屏宽度下可打开侧栏并完成发送。
+- 在窄屏宽度下可打开侧栏；选择会话后侧栏自动关闭，并可完成发送。
 - 浏览器级自动检查：登录、会话加载、提交消息、SSE 完成，且模型回复包含本次用户输入。
 - 截图证据：`docs/evidence/ui-login.png`、`ui-workspace.png`、`ui-completed.png`。
 

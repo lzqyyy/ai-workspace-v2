@@ -24,7 +24,7 @@ func main() {
 	addr := flag.String("addr", defaultAddr, "gRPC address")
 	jobID := flag.String("job", "", "job id")
 	runID := flag.String("run", "", "run id")
-	mode := flag.String("mode", "duplicate", "duplicate, reject, or claim")
+	mode := flag.String("mode", "duplicate", "duplicate, reject, claim, or event-seq")
 	flag.Parse()
 
 	conn, err := grpc.NewClient(*addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -34,6 +34,10 @@ func main() {
 	defer conn.Close()
 	client := pb.NewJobServiceClient(conn)
 
+	if *mode == "event-seq" {
+		checkEventSequence(client, conn)
+		return
+	}
 	if *mode == "reject" {
 		rejectWrongLease(client, *jobID, *runID)
 		return
@@ -59,7 +63,7 @@ func main() {
 		return
 	}
 	if *mode != "duplicate" {
-		fmt.Fprintln(os.Stderr, "mode must be duplicate, reject, or claim")
+		fmt.Fprintln(os.Stderr, "mode must be duplicate, reject, claim, or event-seq")
 		os.Exit(2)
 	}
 	if *jobID == "" || *runID == "" {
@@ -83,6 +87,56 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+func checkEventSequence(client pb.JobServiceClient, conn *grpc.ClientConn) {
+	job := claimNextJob(client)
+	events := pb.NewRunEventServiceClient(conn)
+	call := func(seq int64) (*pb.AppendEventResponse, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return events.AppendEvent(ctx, &pb.AppendEventRequest{
+			Meta:  &pb.RequestMeta{RequestId: fmt.Sprintf("e2e-event-seq-%d", seq)},
+			JobId: job.JobId, RunId: job.RunId, LeaseToken: job.LeaseToken,
+			EventSeq: seq, EventType: "message.delta", PayloadJson: `{"delta":"seq"}`,
+		})
+	}
+
+	if _, err := call(4); err == nil || status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "CONFLICT") {
+		fmt.Fprintf(os.Stderr, "expected gap rejection, got %v\n", err)
+		os.Exit(1)
+	}
+	first, err := call(2)
+	if err != nil || first.Duplicate || first.StoredSeq != 2 {
+		fmt.Fprintf(os.Stderr, "expected seq 2 acceptance, got response=%v err=%v\n", first, err)
+		os.Exit(1)
+	}
+	duplicate, err := call(2)
+	if err != nil || !duplicate.Duplicate {
+		fmt.Fprintf(os.Stderr, "expected duplicate seq 2, got response=%v err=%v\n", duplicate, err)
+		os.Exit(1)
+	}
+	if _, err := call(4); err == nil || status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "CONFLICT") {
+		fmt.Fprintf(os.Stderr, "expected out-of-order rejection, got %v\n", err)
+		os.Exit(1)
+	}
+
+	finish := &pb.UpdateJobStatusRequest{
+		Meta: &pb.RequestMeta{RequestId: "e2e-event-seq-cleanup"}, JobId: job.JobId, RunId: job.RunId,
+		LeaseToken: job.LeaseToken, Status: pb.JobStatus_JOB_STATUS_CANCELLED, ErrorCode: "RUN_CANCELLED",
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	response, err := client.UpdateJobStatus(ctx, finish)
+	cancel()
+	if err != nil || !response.Accepted {
+		fmt.Fprintf(os.Stderr, "failed to cancel event-seq job: %v\n", err)
+		os.Exit(1)
+	}
+	output, _ := json.Marshal(map[string]any{
+		"status": "PASS", "job_id": job.JobId, "run_id": job.RunId,
+		"gap_rejected": true, "duplicate_preserved": true, "out_of_order_rejected": true,
+	})
+	fmt.Println(string(output))
 }
 
 func rejectWrongLease(client pb.JobServiceClient, jobID, runID string) {

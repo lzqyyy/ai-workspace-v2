@@ -589,14 +589,18 @@ Json CoreService::appendEvent(const std::string& job_id, const std::string& run_
         if (lease.get(0, 0) == "t")
             throw ServiceError(409, "RUN_CANCELLED", "run cancellation requested");
         auto inserted = s.query(
-            "INSERT INTO run_events(run_id,seq,event_type,payload_jsonb,request_id) VALUES($1,$2,$3,$4::jsonb,$5) "
+            "INSERT INTO run_events(run_id,seq,event_type,payload_jsonb,request_id) "
+            "SELECT $1,$2,$3,$4::jsonb,$5 "
+            "WHERE $2::bigint=(SELECT COALESCE(MAX(seq),0)+1 FROM run_events WHERE run_id=$1) "
             "ON CONFLICT (run_id,seq) DO NOTHING RETURNING seq::text",
             {run_id, std::to_string(event_seq), event_type, payload.dump(), request_id});
         bool duplicate = inserted.rows() == 0;
         if (duplicate) {
-            auto old = s.query("SELECT event_type,payload_jsonb::text FROM run_events WHERE run_id=$1 AND seq=$2",
-                               {run_id, std::to_string(event_seq)});
-            if (old.rows() != 1 || old.get(0, 0) != event_type || old.get(0, 1) != payload.dump())
+            auto old = s.query("SELECT event_type,payload_jsonb=$3::jsonb FROM run_events WHERE run_id=$1 AND seq=$2",
+                               {run_id, std::to_string(event_seq), payload.dump()});
+            if (old.rows() != 1)
+                throw ServiceError(409, "CONFLICT", "event sequence must be contiguous");
+            if (old.get(0, 0) != event_type || old.get(0, 1) != "t")
                 throw ServiceError(409, "CONFLICT", "event sequence already used with different content");
         }
         s.query("UPDATE jobs SET lease_until=now()+'20 seconds'::interval,updated_at=now() WHERE id=$1", {job_id});

@@ -25,12 +25,22 @@ function element() {
 }
 
 const elements = new Map();
+const sidebarClasses = new Set();
+const sidebar = {
+  classList: {
+    add(value) { sidebarClasses.add(value); },
+    remove(value) { sidebarClasses.delete(value); },
+    toggle(value) { sidebarClasses.has(value) ? sidebarClasses.delete(value) : sidebarClasses.add(value); },
+    contains(value) { return sidebarClasses.has(value); },
+  },
+};
 const document = {
   getElementById(id) {
     if (!elements.has(id)) elements.set(id, element());
     return elements.get(id);
   },
   querySelectorAll() { return []; },
+  querySelector(selector) { return selector === '.sidebar' ? sidebar : null; },
 };
 const storage = new Map();
 const localStorage = {
@@ -114,6 +124,22 @@ vm.runInContext(fs.readFileSync('frontend/app.js', 'utf8'), context);
   await context.restoreActiveRun();
   assert.strictEqual(JSON.stringify(context.__beginArgs), JSON.stringify(['run-running', 'conversation-complete', 9, 'part']), 'running restore must resume from saved cursor');
 
+  sidebarClasses.add('open');
+  vm.runInContext(`
+    state.run = null;
+    state.conversations = [{ id: 'conversation-sidebar', agent_name: 'Agent', title: 'Sidebar' }];
+    renderConversations = () => {};
+    renderMessages = () => {};
+    api = async () => ({ items: [] });
+    setSending = () => {};
+    setRunState = () => {};
+    clearError = () => {};
+    closeRunStream = () => {};
+    __sidebarClose = selectConversation('conversation-sidebar');
+  `, context);
+  await context.__sidebarClose;
+  assert.strictEqual(sidebarClasses.has('open'), false, 'selecting a conversation must close mobile sidebar');
+
   let eventSourceUrl = '';
   context.EventSource = class {
     constructor(url) { eventSourceUrl = url; this.readyState = 0; }
@@ -137,7 +163,7 @@ vm.runInContext(fs.readFileSync('frontend/app.js', 'utf8'), context);
   assert.strictEqual(persisted.lastEventId, 10, 'persisted cursor must match SSE progress');
   assert.strictEqual(persisted.partial, 'partial', 'persisted partial content must match stream progress');
 
-  console.log(JSON.stringify({ status: 'PASS', retry_dedupe: true, refresh_restore: true, sse_reconnect: true, completed_state: true }));
+  console.log(JSON.stringify({ status: 'PASS', retry_dedupe: true, refresh_restore: true, sse_reconnect: true, completed_state: true, mobile_sidebar_close: true }));
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;

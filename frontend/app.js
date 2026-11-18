@@ -53,6 +53,7 @@ function updateEmptyState(){
   const hasAgent=state.agents.length>0;els.emptyState.classList.remove('hidden');els.messages.classList.add('hidden');els.emptyState.querySelector('h3').textContent=hasAgent?'创建第一个会话':'先创建一个 Agent';els.emptyState.querySelector('p').textContent=hasAgent?'Agent 已就绪。创建会话后即可发送消息，并由 Worker 流式回复。':'Agent 绑定所有者与模型配置，是发起会话的前提。';els.emptyAction.textContent=hasAgent?'创建会话':'创建 Agent';els.messageInput.disabled=true;els.sendButton.disabled=true;
 }async function selectConversation(id){
   const conversation=state.conversations.find(item=>item.id===id);if(!conversation)return;
+  document.querySelector?.('.sidebar')?.classList.remove('open');
   if(state.activeConversation?.id!==id||state.eventSource)closeRunStream();
   state.activeConversation=conversation;state.lastRunId=state.run?.conversationId===id?state.run.runId:null;renderConversations();els.emptyState.classList.add('hidden');els.messages.classList.remove('hidden');
   els.conversationTitle.textContent=conversation.title;els.conversationSubtitle.textContent=`${conversation.agent_name} · 历史消息持久化于 PostgreSQL`;clearError();

@@ -1,8 +1,8 @@
 # Handoff: IMP-20261119 run attribution and idempotency contract
 
-- 状态：REVIEW
+- 状态：DONE
 - 主责 Agent：CORE/COORD
-- 分支 / 提交：`agent/core/package-def-mvp-closeout` / 待提交
+- 分支 / 提交：`main` / `2cd622d`（实现在 `7caee67`，merge 后基线为 `2cd622d`）
 - 开始时间：2026-11-19
 - 完成时间：2026-11-19
 

@@ -2,7 +2,7 @@
 
 更新时间：2026-11-19
 当前候选版本：V0.2.0（REVIEW）
-发布状态：分支已推送 `origin`；未合并 `main`；未创建 `V0.2.0` tag
+发布状态：已合并 `main` 并推送 `origin`；未创建 `V0.2.0` tag
 
 ## 当前任务
 
@@ -43,7 +43,7 @@
 | HOTFIX-20261117 共享历史轮询竞态 | WEB/QA | REVIEW | 防止较早的慢响应覆盖较新的共享消息快照；修复 Windows 浏览器 profile 清理误报；全量/浏览器 PASS |
 | HOTFIX-20261118 SSE 事件序号与窄屏回归 | CORE/WEB/QA | REVIEW | appendEvent 强制连续序号；跳号/乱序专项 PASS；窄屏侧栏关闭修复；Docker/E2E/Playwright PASS |
 | DOC-20261117 当前事实与交付基线校准 | COORD | REVIEW | 版本/迁移/前端接入/push 状态、归档与幂等边界、UTF-8 长度语义修正；契约与本地验证通过 |
-| IMP-20261119 Run 归属与发送幂等合同 | CORE/COORD | REVIEW | `client_request_id` 必填、`runs.initiated_by_user_id`、008 迁移、retry/取消权限、OpenAPI 1.0.1；Docker 全量与双浏览器 2H+2A PASS |
+| IMP-20261119 Run 归属与发送幂等合同 | CORE/COORD | DONE | `client_request_id` 必填、`runs.initiated_by_user_id`、008 迁移、retry/取消权限、OpenAPI 1.0.1；Docker 全量与双浏览器 2H+2A PASS；已合并 `main` |
 
 ## Gate 结果
 

@@ -240,6 +240,7 @@ function clearConversationView() {
 }
 async function selectConversation(id) {
   const conversation = state.conversations.find((item) => item.id === id); if (!conversation) return;
+  document.querySelector?.('.sidebar')?.classList.remove('open');
   state.activeConversation = conversation; localStorage.setItem(`workspace.conversation.${state.project.id}`, conversation.id);
   renderConversations(); els.emptyState.classList.add('hidden'); els.messages.classList.remove('hidden');
   els.conversationTitle.textContent = conversation.title; els.conversationSubtitle.textContent = `${state.project.name} · ${state.role} · ${state.projectAgents.length} 个 Project Agent`;

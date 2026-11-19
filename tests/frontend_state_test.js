@@ -40,13 +40,22 @@ function element(id = '') {
 const elements = new Map();
 const emptyHeading = element('empty-heading');
 const emptyCopy = element('empty-copy');
+const sidebarClasses = new Set();
+const sidebar = {
+  classList: {
+    add(value) { sidebarClasses.add(value); },
+    remove(value) { sidebarClasses.delete(value); },
+    toggle(value) { sidebarClasses.has(value) ? sidebarClasses.delete(value) : sidebarClasses.add(value); },
+    contains(value) { return sidebarClasses.has(value); },
+  },
+};
 const document = {
   getElementById(id) {
     if (!elements.has(id)) elements.set(id, element(id));
     return elements.get(id);
   },
   querySelectorAll() { return []; },
-  querySelector(selector) { return selector === '.sidebar' ? element('sidebar') : null; },
+  querySelector(selector) { return selector === '.sidebar' ? sidebar : null; },
   addEventListener() {},
   hidden: false,
 };
@@ -83,6 +92,7 @@ const context = {
 };
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('frontend/app.js', 'utf8'), context);
+context.__originalSelectConversation = vm.runInContext('selectConversation', context);
 
 (async () => {
   vm.runInContext(`
@@ -225,5 +235,28 @@ vm.runInContext(fs.readFileSync('frontend/app.js', 'utf8'), context);
   await context.__loadFirst;
   assert.deepStrictEqual(Array.from(vm.runInContext('state.messages.map((message) => message.id)', context)), ['newer'], 'older message response must not overwrite newer history');
 
-  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true}));
+  sidebarClasses.add('open');
+  vm.runInContext(`
+    state.run = null;
+    state.eventSource = null;
+    state.project = {id:'project-sidebar', name:'Project'};
+    state.role = 'owner';
+    state.projectAgents = [];
+    state.conversations = [{id:'conversation-sidebar', agent_name:'Agent', title:'Sidebar'}];
+    selectConversation = __originalSelectConversation;
+    __sidebarFound = state.conversations.find((item) => item.id === 'conversation-sidebar')?.id;
+    __sidebarSourceHasClose = selectConversation.toString().includes('classList.remove');
+    renderConversations = () => {};
+    loadMessages = async () => {};
+    startPolling = () => {};
+    connectRun = () => {};
+    clearError = () => {};
+    __sidebarClose = selectConversation('conversation-sidebar');
+  `, context);
+  assert.strictEqual(context.__sidebarFound, 'conversation-sidebar');
+  assert.ok(context.__sidebarSourceHasClose);
+  await context.__sidebarClose;
+  assert.strictEqual(sidebarClasses.has('open'), false, 'selecting a conversation must close mobile sidebar');
+
+  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true}));
 })().catch((error) => { console.error(error); process.exitCode = 1; });

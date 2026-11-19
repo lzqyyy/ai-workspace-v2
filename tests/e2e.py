@@ -84,8 +84,17 @@ def main():
     expect_validation(demo,'POST','/api/v1/conversations',{'agent_id':123,'title':'bad'});expect_validation(demo,'POST','/api/v1/conversations',{'agent_id':agent['id'],'title':123});expect_validation(demo,'POST','/api/v1/conversations',{'agent_id':agent['id'],'title':'bad','unexpected':True})
     conversation=demo.request('POST','/api/v1/conversations',{'agent_id':agent['id'],'title':'Automated E2E'});cid=conversation['id'];assert conversation.get('project_id'),conversation
     listed=demo.request('GET','/api/v1/conversations')['items'];assert any(item['id']==cid and item.get('project_id')==conversation['project_id'] for item in listed),listed
-    expect_validation(demo,'POST',f'/api/v1/conversations/{cid}/messages',{'content':'invalid target uuid','target_agent_id':invalid_uuid})
-    expect_validation(demo,'POST',f'/api/v1/conversations/{cid}/messages',{'content':'missing target'});expect_validation(demo,'POST',f'/api/v1/conversations/{cid}/messages',{'content':123,'target_agent_id':agent['id']});expect_validation(demo,'POST',f'/api/v1/conversations/{cid}/messages',{'content':'x','client_request_id':123,'target_agent_id':agent['id']});expect_validation(demo,'POST',f'/api/v1/conversations/{cid}/messages',{'content':'x','target_agent_id':agent['id'],'unexpected':True});expect_validation(demo,'POST',f'/api/v1/conversations/{cid}/messages',{'content':'x','client_request_id':'short','target_agent_id':agent['id']});expect_validation(demo,'POST',f'/api/v1/conversations/{cid}/messages',{'content':'x'*32001,'target_agent_id':agent['id']})
+    messages_path=f'/api/v1/conversations/{cid}/messages'
+    validation_request=f'validation-{uuid.uuid4()}'
+    expect_validation(demo,'POST',messages_path,{'content':'invalid target uuid','client_request_id':validation_request,'target_agent_id':invalid_uuid})
+    expect_validation(demo,'POST',messages_path,{'content':'missing target','client_request_id':validation_request})
+    expect_validation(demo,'POST',messages_path,{'content':'missing client request id','target_agent_id':agent['id']})
+    expect_validation(demo,'POST',messages_path,{'content':123,'client_request_id':validation_request,'target_agent_id':agent['id']})
+    expect_validation(demo,'POST',messages_path,{'content':'x','client_request_id':123,'target_agent_id':agent['id']})
+    expect_validation(demo,'POST',messages_path,{'content':'x','client_request_id':'short','target_agent_id':agent['id']})
+    expect_validation(demo,'POST',messages_path,{'content':'x','client_request_id':validation_request,'target_agent_id':agent['id'],'unexpected':True})
+    expect_validation(demo,'POST',messages_path,{'content':'x','client_request_id':validation_request,'target_agent_id':agent['id']},headers={'Idempotency-Key':f'mismatch-{uuid.uuid4()}'})
+    expect_validation(demo,'POST',messages_path,{'content':'x'*32001,'client_request_id':validation_request,'target_agent_id':agent['id']})
     first_request=f'e2e-send-{uuid.uuid4()}';sent=send(demo,cid,agent['id'],'请执行一次完整的端到端测试',first_request);assert sent['status'] in {'queued','running'};run_id=sent['run_id']
     events=demo.events(run_id);assert_event_contract(events);completed=events[-1];assert completed['type']=='message.completed',completed;final_content=completed['payload']['content'];assert final_content;assert '请执行一次完整的端到端测试' in final_content, 'current user prompt missing from model context'
     messages=demo.request('GET',f'/api/v1/conversations/{cid}/messages')['items'];assert len(messages)==2,messages;assert messages[0]['sender_type']=='user' and messages[0]['content']=='请执行一次完整的端到端测试';assert messages[1]['sender_type']=='agent' and messages[1]['content']==final_content;assert messages[1]['run_id']==run_id

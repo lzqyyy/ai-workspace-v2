@@ -63,8 +63,8 @@ INSERT INTO conversations(id,owner_id,agent_id,project_id,title,status)
 VALUES ('$fixtureConversation','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000201','$fixtureProject','Package B guard conversation','active');
 INSERT INTO messages(id,conversation_id,sender_type,sender_id,role,content,status)
 VALUES ('$fixtureMessage','$fixtureConversation','user','00000000-0000-4000-8000-000000000102','user','fixture trigger','completed');
-INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status)
-VALUES ('$fixtureRun','$fixtureConversation','00000000-0000-4000-8000-000000000201','$fixtureMessage','00000000-0000-4000-8000-000000000001','queued');
+INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status,initiated_by_user_id)
+VALUES ('$fixtureRun','$fixtureConversation','00000000-0000-4000-8000-000000000201','$fixtureMessage','00000000-0000-4000-8000-000000000001','queued','00000000-0000-4000-8000-000000000102');
 -- Keep the worker from claiming the fixture; the Run itself remains active for the removal guard.
 INSERT INTO jobs(id,run_id,status) VALUES ('$fixtureJob','$fixtureRun','queued');
 COMMIT;

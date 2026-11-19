@@ -75,7 +75,7 @@ agent_contract:
 
 - Project membership 是 Conversation、Message、Run 与 SSE 的统一授权边界。
 - owner/editor 可创建共享 Conversation、发送消息和使用 Project Agent；viewer 只读。
-- owner/editor 只能取消/重试自己的 Run；owner 可取消/重试任意 Run。
+- owner/editor 只能取消/重试 `runs.initiated_by_user_id = current_user_id` 的 Run；owner 可取消/重试任意 Run。
 - Agent 归 owner 所有；只有 Agent owner 能把自己的 active Agent 加入 Project。
 - 非 Project 成员访问 Project 资源统一返回 403；一个 Conversation 同时最多一个 queued/running Run。
 - 前端按钮状态只用于交互，服务端始终是唯一授权依据。
@@ -256,7 +256,7 @@ python tests/e2e.py
 - 本地 PostgreSQL：`127.0.0.1:55432`，数据库 `workspace`。
 - Docker PostgreSQL：内部 `postgres:5432`，不发布宿主机端口。
 - 迁移入口：`db/migrations/*.sql`，由 C++ 启动时执行。
-- 当前迁移：`001_init` 到 `007_conversation_project_required`。
+- 当前迁移：`001_init` 到 `008_run_initiated_by`。
 - 所有迁移必须可重复执行并记录 `schema_migrations`。
 - 不得提交数据库数据、WAL、日志、`pgdata/` 或 `.env`。
 - 破坏性变更必须先写 ADR。

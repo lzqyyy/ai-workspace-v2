@@ -28,9 +28,15 @@ function Assert-Schema {
     if ($nullRows -ne '0') { throw "conversations.project_id contains $nullRows NULL rows" }
     $migrations = Query-Scalar "SELECT count(*) FROM schema_migrations;"
     $projectMigration = Query-Scalar "SELECT count(*) FROM schema_migrations WHERE version='007_project_id_required';"
-    if ([int]$migrations -lt 7) { throw "expected at least 7 migrations, got $migrations" }
+    $initiatedNullable = Query-Scalar "SELECT is_nullable FROM information_schema.columns WHERE table_name='runs' AND column_name='initiated_by_user_id';"
+    $initiatedNullRows = Query-Scalar "SELECT count(*) FROM runs WHERE initiated_by_user_id IS NULL;"
+    $initiatedMigration = Query-Scalar "SELECT count(*) FROM schema_migrations WHERE version='008_run_initiated_by';"
+    if ([int]$migrations -lt 8) { throw "expected at least 8 migrations, got $migrations" }
     if ($projectMigration -ne '1') { throw "007_project_id_required must appear exactly once, got $projectMigration" }
-    return [ordered]@{migrations=[int]$migrations; project_id_nullable=$nullable; null_rows=[int]$nullRows; migration_007=$projectMigration}
+    if ($initiatedNullable -ne 'NO') { throw "runs.initiated_by_user_id must be NOT NULL, got $initiatedNullable" }
+    if ($initiatedNullRows -ne '0') { throw "runs.initiated_by_user_id contains $initiatedNullRows NULL rows" }
+    if ($initiatedMigration -ne '1') { throw "008_run_initiated_by must appear exactly once, got $initiatedMigration" }
+    return [ordered]@{migrations=[int]$migrations; project_id_nullable=$nullable; null_rows=[int]$nullRows; migration_007=$projectMigration; initiated_by_nullable=$initiatedNullable; initiated_by_null_rows=[int]$initiatedNullRows; migration_008=$initiatedMigration}
 }
 
 Push-Location $root

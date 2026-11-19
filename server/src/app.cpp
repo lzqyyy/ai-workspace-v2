@@ -262,13 +262,16 @@ void Api::registerRoutes()
         } else {
             run_json(req, cb, true, [this, req, conversation_id](const AuthSession& s, const std::string& rid) {
                 enforce_origin(req);
-                std::string client_id = idempotency_key(req);
+                const std::string header_client_id = idempotency_key(req);
                 auto body = parse_body(req);
                 const std::string body_client_id = json_string(body, "client_request_id");
-                if (!body_client_id.empty() && (body_client_id.size() < 8 || body_client_id.size() > 100))
+                if (body_client_id.empty())
+                    throw ServiceError(400, "VALIDATION_FAILED", "client_request_id is required");
+                if (body_client_id.size() < 8 || body_client_id.size() > 100)
                     throw ServiceError(400, "VALIDATION_FAILED", "client_request_id must be 8-100 characters");
-                if (client_id.empty()) client_id = body_client_id;
-                return service_.sendMessage(s.user_id, conversation_id, body, client_id, rid);
+                if (!header_client_id.empty() && header_client_id != body_client_id)
+                    throw ServiceError(400, "VALIDATION_FAILED", "Idempotency-Key must match client_request_id");
+                return service_.sendMessage(s.user_id, conversation_id, body, body_client_id, rid);
             }, 202);
         }
     }, {Get, Post});

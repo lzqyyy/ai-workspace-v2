@@ -6,7 +6,7 @@
 
 ## 决策
 
-- OpenAPI、Protobuf、SSE、错误码当前版本均为 `1.0.0`，兼容性以主版本为准。
+- OpenAPI 当前版本为 `1.0.1`；Protobuf、SSE envelope、错误码当前版本为 `1.0.0`。兼容性以主版本为准。
 - Run 与 Job 共享业务状态集合：`queued -> running -> succeeded | failed | cancelled`。
 - 终态不可逆；所有终态写入必须幂等。
 - SSE 事件序号按 `run_id` 独立、从 1 单调递增，并先持久化后发送。

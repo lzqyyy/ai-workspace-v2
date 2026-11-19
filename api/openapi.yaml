@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AI Workspace V2.0 Core API
-  version: 1.0.0
+  version: 1.0.1
   description: |
     Frozen REST contract between the native browser client and the C++ core.
     All API requests are same-origin and authenticated by an HttpOnly session cookie.
@@ -484,10 +484,14 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [content, target_agent_id]
+              required: [content, client_request_id, target_agent_id]
               properties:
                 content: { type: string, minLength: 1, maxLength: 32000 }
-                client_request_id: { type: string, minLength: 8, maxLength: 100 }
+                client_request_id:
+                  type: string
+                  minLength: 8
+                  maxLength: 100
+                  description: Required sender-scoped idempotency key. Reuse only when retrying the same logical send.
                 target_agent_id:
                   type: string
                   format: uuid

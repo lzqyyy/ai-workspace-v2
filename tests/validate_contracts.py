@@ -14,6 +14,7 @@ ERRORS = ROOT / "docs" / "contracts" / "error-codes.md"
 MIGRATIONS_DIR = ROOT / "db" / "migrations"
 MULTIPLAYER_MIGRATION = MIGRATIONS_DIR / "006_multiplayer_foundation.sql"
 PROJECT_REQUIRED_MIGRATION = MIGRATIONS_DIR / "007_conversation_project_required.sql"
+INITIATED_MIGRATION = MIGRATIONS_DIR / "008_run_initiated_by.sql"
 
 EXPECTED_PATHS = {
     ("/api/v1/auth/login", "post"),
@@ -60,7 +61,7 @@ EXPECTED_EVENTS = {
 def main() -> int:
     api = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
     assert api["openapi"] == "3.1.0"
-    assert api["info"]["version"] == "1.0.0"
+    assert api["info"]["version"] == "1.0.1"
 
     operations = {
         (path, method)
@@ -117,7 +118,10 @@ def main() -> int:
 
     send_schema = api["paths"]["/api/v1/conversations/{conversation_id}/messages"]["post"]["requestBody"]["content"]["application/json"]["schema"]
     assert "target_agent_id" in send_schema.get("required", []), "send message must require target_agent_id"
+    assert "client_request_id" in send_schema.get("required", []), "send message must require client_request_id"
     assert send_schema["properties"]["target_agent_id"]["format"] == "uuid", "target_agent_id must be a UUID"
+    assert send_schema["properties"]["client_request_id"]["minLength"] == 8, "client_request_id minLength mismatch"
+    assert send_schema["properties"]["client_request_id"]["maxLength"] == 100, "client_request_id maxLength mismatch"
 
     run_statuses = set(schemas["Run"]["properties"]["status"]["enum"])
     send_statuses = set(schemas["SendMessageResponse"]["properties"]["status"]["enum"])
@@ -153,6 +157,7 @@ def main() -> int:
     assert migrations, "database migrations are missing"
     assert MULTIPLAYER_MIGRATION in migrations, "multiplayer foundation migration missing"
     assert PROJECT_REQUIRED_MIGRATION in migrations, "conversation project_id NOT NULL migration missing"
+    assert INITIATED_MIGRATION in migrations, "Run initiated_by_user_id migration missing"
     migration_text = MULTIPLAYER_MIGRATION.read_text(encoding="utf-8")
     for table in ("projects", "project_members", "project_agents"):
         assert f"CREATE TABLE IF NOT EXISTS {table}" in migration_text, f"missing migration table: {table}"
@@ -171,6 +176,18 @@ def main() -> int:
     )
     required_version = re.search(r"schema_migrations\(version\) VALUES \('([^']+)'\)", required_migration)
     assert required_version and len(required_version.group(1)) <= 32, (
+        "migration version must fit schema_migrations.version VARCHAR(32)"
+    )
+    initiated_migration = INITIATED_MIGRATION.read_text(encoding="utf-8")
+    normalized_initiated = " ".join(initiated_migration.split())
+    assert "ADD COLUMN IF NOT EXISTS initiated_by_user_id UUID REFERENCES users(id)" in normalized_initiated, (
+        "008 must add runs.initiated_by_user_id"
+    )
+    assert "ALTER COLUMN initiated_by_user_id SET NOT NULL" in normalized_initiated, (
+        "008 must enforce runs.initiated_by_user_id NOT NULL"
+    )
+    initiated_version = re.search(r"schema_migrations\(version\) VALUES \('([^']+)'\)", initiated_migration)
+    assert initiated_version and len(initiated_version.group(1)) <= 32, (
         "migration version must fit schema_migrations.version VARCHAR(32)"
     )
 

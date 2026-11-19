@@ -74,7 +74,15 @@ def main() -> int:
         f"/api/v1/conversations/{conversation_id}/messages",
         400,
         "VALIDATION_FAILED",
-        {"content": "target agent is required"},
+        {"content": "target agent is required", "client_request_id": f"shared-missing-target-{uuid.uuid4()}"},
+    )
+    expect_error(
+        owner,
+        "POST",
+        f"/api/v1/conversations/{conversation_id}/messages",
+        400,
+        "VALIDATION_FAILED",
+        {"content": "client request id is required", "target_agent_id": owner_agent["id"]},
     )
     loose_agent = owner.request(
         "POST", "/api/v1/agents", {"name": f"Loose Agent {uuid.uuid4().hex[:6]}", "system_prompt": "Not shared"}
@@ -166,6 +174,7 @@ def main() -> int:
     )
     owner_retry_events = owner.events(owner_retry["run_id"])
     assert_event_contract(owner_retry_events)
+    expect_error(editor, "POST", f"/api/v1/runs/{owner_retry['run_id']}/cancel", 403, "FORBIDDEN", None)
 
     editor_retry = editor.request(
         "POST",
@@ -250,6 +259,7 @@ def main() -> int:
         "non_member_denied": True,
         "removed_agent_owner_denied": True,
         "run_permissions": True,
+        "run_attribution": True,
         "invalid_target_validation": True,
         "concurrent_send_single_active": True,
     }, ensure_ascii=False))

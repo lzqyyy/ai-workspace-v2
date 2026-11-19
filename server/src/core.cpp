@@ -493,10 +493,9 @@ void CoreService::removeProjectMember(const std::string& user_id, const std::str
         }
         auto active = s.query(
             "SELECT 1 FROM runs r JOIN conversations c ON c.id=r.conversation_id "
-            "JOIN messages m ON m.id=r.trigger_message_id "
             "JOIN agents a ON a.id=r.agent_id "
-            "WHERE c.project_id=$1 AND m.sender_type='user' "
-            "AND (m.sender_id=$2 OR a.owner_id=$2) AND r.status IN ('queued','running') LIMIT 1",
+            "WHERE c.project_id=$1 AND (r.initiated_by_user_id=$2 OR a.owner_id=$2) "
+            "AND r.status IN ('queued','running') LIMIT 1",
             {project_id, target_user_id});
         if (active.rows() == 1)
             throw ServiceError(409, "CONFLICT", "member has an active run in this project");
@@ -731,7 +730,9 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
     const std::string target_agent_id = json_string(body, "target_agent_id");
     require_text(content, "content", 32000);
     require_uuid(target_agent_id, "target_agent_id");
-    if (!client_request_id.empty() && (utf8_codepoint_length(client_request_id) < 8 || utf8_codepoint_length(client_request_id) > 100))
+    if (client_request_id.empty())
+        throw ServiceError(400, "VALIDATION_FAILED", "client_request_id is required");
+    if (utf8_codepoint_length(client_request_id) < 8 || utf8_codepoint_length(client_request_id) > 100)
         throw ServiceError(400, "VALIDATION_FAILED", "client_request_id must be 8-100 characters");
 
     auto s = db_.session();
@@ -768,12 +769,10 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
         if (conversation.get(0, 0) != "active")
             throw ServiceError(409, "CONFLICT", "conversation is archived");
 
-        if (!client_request_id.empty()) {
-            auto existing = s.query(duplicate_sql, {conversation_id, user_id, client_request_id});
-            if (existing.rows() == 1) {
-                s.commit();
-                return duplicate_json(existing);
-            }
+        auto existing = s.query(duplicate_sql, {conversation_id, user_id, client_request_id});
+        if (existing.rows() == 1) {
+            s.commit();
+            return duplicate_json(existing);
         }
 
         const std::string provider_id = requireProjectAgent(
@@ -795,8 +794,7 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
             "DO NOTHING RETURNING id::text,conversation_id::text,seq::text,"
             "sender_type,sender_id::text,role,content,run_id::text,status,"
             "to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"')",
-            {message_id, conversation_id, user_id, content,
-             client_request_id.empty() ? std::nullopt : std::optional<std::string>(client_request_id)});
+            {message_id, conversation_id, user_id, content, client_request_id});
         if (msg.rows() == 0) {
             auto existing = s.query(duplicate_sql, {conversation_id, user_id, client_request_id});
             if (existing.rows() != 1)
@@ -804,16 +802,18 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
             s.commit();
             return duplicate_json(existing);
         }
-        s.query("INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status) "
-                "VALUES($1,$2,$3,$4,$5,'queued')",
-                {run_id, conversation_id, target_agent_id, message_id, provider_id});
+        s.query("INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status,initiated_by_user_id) "
+                "VALUES($1,$2,$3,$4,$5,'queued',$6)",
+                {run_id, conversation_id, target_agent_id, message_id, provider_id, user_id});
         s.query("UPDATE messages SET run_id=$1 WHERE id=$2", {run_id, message_id});
         s.query("INSERT INTO jobs(id,run_id,status) VALUES($1,$2,'queued')", {job_id, run_id});
         s.query("UPDATE conversations SET updated_at=now() WHERE id=$1", {conversation_id});
         audit(s, "user", user_id, "message.send", "run", run_id, "success", request_id,
-              {{"conversation_id", conversation_id}, {"agent_id", target_agent_id}, {"role", role}});
+              {{"conversation_id", conversation_id}, {"agent_id", target_agent_id}, {"role", role},
+               {"initiated_by_user_id", user_id}});
         audit(s, "user", user_id, "run.start", "run", run_id, "success", request_id,
-              {{"conversation_id", conversation_id}, {"agent_id", target_agent_id}});
+              {{"conversation_id", conversation_id}, {"agent_id", target_agent_id},
+               {"initiated_by_user_id", user_id}});
         s.commit();
         Json message = message_json(msg, 0);
         message["run_id"] = run_id;
@@ -836,9 +836,8 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
     s.begin();
     try {
         auto initial = s.query(
-            "SELECT c.project_id::text,c.id::text,m.sender_id::text FROM runs r "
-            "JOIN conversations c ON c.id=r.conversation_id "
-            "JOIN messages m ON m.id=r.trigger_message_id WHERE r.id=$1",
+            "SELECT c.project_id::text,c.id::text,r.initiated_by_user_id::text FROM runs r "
+            "JOIN conversations c ON c.id=r.conversation_id WHERE r.id=$1",
             {run_id});
         if (initial.rows() != 1)
             throw ServiceError(403, "FORBIDDEN", "run is not accessible");
@@ -859,7 +858,7 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
 
         auto old = s.query(
             "SELECT r.agent_id::text,r.model_provider_id::text,r.trigger_message_id::text,r.status,"
-            "m.sender_id::text FROM runs r JOIN messages m ON m.id=r.trigger_message_id "
+            "r.initiated_by_user_id::text FROM runs r "
             "WHERE r.id=$1 AND r.conversation_id=$2 FOR UPDATE OF r",
             {run_id, conversation_id});
         if (old.rows() != 1)
@@ -912,9 +911,9 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
 
         const std::string new_run_id = uuid4();
         const std::string job_id = uuid4();
-        s.query("INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status) "
-                "VALUES($1,$2,$3,$4,$5,'queued')",
-                {new_run_id, conversation_id, old.get(0, 0), old.get(0, 2), provider_id});
+        s.query("INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status,initiated_by_user_id) "
+                "VALUES($1,$2,$3,$4,$5,'queued',$6)",
+                {new_run_id, conversation_id, old.get(0, 0), old.get(0, 2), provider_id, user_id});
         s.query("UPDATE messages SET run_id=$1 WHERE id=$2", {new_run_id, old.get(0, 2)});
         s.query("INSERT INTO jobs(id,run_id,status) VALUES($1,$2,'queued')", {job_id, new_run_id});
         if (!idempotency_key.empty()) {
@@ -931,7 +930,7 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
         s.query("UPDATE conversations SET updated_at=now() WHERE id=$1", {conversation_id});
         audit(s, "user", user_id, "run.retry", "run", new_run_id, "success", request_id,
               {{"source_run_id", run_id}, {"conversation_id", conversation_id},
-               {"agent_id", old.get(0, 0)}, {"role", role}});
+               {"agent_id", old.get(0, 0)}, {"role", role}, {"initiated_by_user_id", user_id}});
         auto msg = s.query(std::string("SELECT ") + kMessageColumns + " FROM messages m WHERE m.id=$1",
                            {old.get(0, 2)});
         s.commit();
@@ -962,10 +961,9 @@ Json CoreService::cancelRun(const std::string& user_id, const std::string& run_i
                                                      "run.cancel", request_id);
         auto r = s.query(
             std::string("SELECT ") + kRunColumns +
-                ",j.status,m.sender_id::text FROM runs r "
+                ",j.status,r.initiated_by_user_id::text FROM runs r "
                 "JOIN conversations c ON c.id=r.conversation_id "
                 "JOIN jobs j ON j.run_id=r.id "
-                "JOIN messages m ON m.id=r.trigger_message_id "
                 "WHERE r.id=$1 AND c.project_id=$2 FOR UPDATE OF r,j",
             {run_id, project_id});
         if (r.rows() != 1)

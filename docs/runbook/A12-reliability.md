@@ -20,7 +20,8 @@
 
 ## 3. 幂等点
 
-- 发送消息：`client_request_id` 按 `(conversation_id, sender_id, client_request_id)` 幂等；重复请求返回原 `run_id`。
+- 发送消息：`client_request_id` 必填，按 `(conversation_id, sender_id, client_request_id)` 幂等；重复请求返回原 `run_id`。
+- Run 归属：`initiated_by_user_id` 记录实际发送或重试者；retry 新 Run 归属重试者。
 - Retry：`Idempotency-Key` 按用户幂等；同一用户重复使用同一 key 返回第一次创建的 retry `run_id`。
 - 最终消息：`(run_id)` partial unique + `ON CONFLICT DO NOTHING`。
 - 终态回调：已终态 Run 对相同 Job/Run 再次 UpdateJobStatus 返回 `accepted=true, duplicate=true`，不新增消息或事件。

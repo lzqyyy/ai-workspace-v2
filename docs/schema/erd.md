@@ -1,7 +1,7 @@
 # 数据库 ER 设计 V1.1.0
 
 - 数据库：PostgreSQL 16+
-- 迁移：`db/migrations/001_init.sql` 至 `007_conversation_project_required.sql`
+- 迁移：`db/migrations/001_init.sql` 至 `008_run_initiated_by.sql`
 - 唯一业务写入者：C++ Core
 - Worker 禁止连接 PostgreSQL
 
@@ -29,6 +29,7 @@ erDiagram
     runs ||--o{ run_events : streams
     runs ||--o| messages : produces
     users ||--o{ audit_events : acts
+    users ||--o{ runs : initiates
     users ||--o{ retry_idempotency : owns
     runs ||--o{ retry_idempotency : retried_as
 ```
@@ -37,9 +38,10 @@ erDiagram
 
 - Project 成员可见 Project 下全部 Conversation、Message，并可订阅该 Project 下 Run 的 SSE；不建立 `conversation_members`。
 - `conversations.owner_id` 保留为创建者字段，不再作为权限归属；`conversations.agent_id` 保留为历史默认 Agent 字段。
-- 新消息请求必须携带 `target_agent_id`；该值写入对应 Run 的 `runs.agent_id`。`target_agent_id` 是请求字段，不是 `messages` 表字段。
-- 一个 Conversation 同时最多一个 `status IN ('queued','running')` 的 Run；工程包 C 必须在创建 Run 的事务中使用发送锁并返回 409。工程包 B 只实现成员/Agent 移除保护，不切换旧发送链路。
-- `messages.client_request_id` 按 `(conversation_id, sender_id, client_request_id)` 唯一，不同用户可使用相同客户端请求 ID。
+- 新消息请求必须携带 `client_request_id` 和 `target_agent_id`；目标 Agent 写入 `runs.agent_id`，`target_agent_id` 不是 `messages` 表字段。
+- 一个 Conversation 同时最多一个 `status IN ('queued','running')` 的 Run；当前由 Project + Conversation 行锁和 409 返回保证。
+- `messages.client_request_id` 按 `(conversation_id, sender_id, client_request_id)` 唯一，不同用户可使用相同客户端请求 ID；同一用户重复请求返回原消息和 Run。
+- `runs.initiated_by_user_id` 表示实际发起或重试该 Run 的用户；`trigger_message_id` 保留不可变的原始触发消息。历史 Run 按触发消息作者回填。
 - Project 内一个用户只有一个角色；至少一个 `owner` 由应用事务保证。不能移除或降级最后一个 owner。
 - Agent 继续由 `agents.owner_id` 拥有；加入 Project 不转让所有权。Agent owner 必须是 Project 成员，且只有 owner 自己能执行加入操作。
 - 一个用户消息、Run、Job 在同一事务创建。
@@ -57,7 +59,7 @@ erDiagram
 - 写入 owner 成员关系与 Project Agent 映射；
 - 回填 `conversations.project_id`。
 
-工程包 C 的 `007_conversation_project_required.sql` 在兼容 Conversation 写入已切换为始终提供 `project_id` 后，将 `conversations.project_id` 收紧为 `NOT NULL`。Package B/C 已完成 Project-first Conversation 路由、Project membership 运行权限，以及基于 Project + Conversation 行锁的单 active Run 事务。迁移不得删除现有数据，也不得修改 `001` 至 `006`。
+工程包 C 的 `007_conversation_project_required.sql` 在兼容 Conversation 写入已切换为始终提供 `project_id` 后，将 `conversations.project_id` 收紧为 `NOT NULL`。`008_run_initiated_by.sql` 新增并回填 `runs.initiated_by_user_id`。Package B/C 已完成 Project-first Conversation 路由、Project membership 运行权限，以及基于 Project + Conversation 行锁的单 active Run 事务。迁移不得删除现有数据，也不得修改既有迁移。
 
 ## 4. 权限查询约束
 
@@ -69,9 +71,9 @@ erDiagram
 | Message | 所属 Conversation 的 Project 对当前用户可见 |
 | Agent 使用 | Agent 在 `project_agents` 中且 active；发送者角色为 owner/editor |
 | Run / SSE | 所属 Conversation 的 Project 对当前用户可见；viewer 只读 |
-| Run 取消/重试 | owner/editor 操作自己的 Run；owner 可操作任意 Run |
+| Run 取消/重试 | owner/editor 操作 `runs.initiated_by_user_id = current_user_id` 的 Run；owner 可操作任意 Run |
 | Job / run_events | 仅内部 Worker 凭短期 lease 访问 |
 
 ## 5. 当前实现状态
 
-工程包 B/C 已实现 Project、ProjectMember、ProjectAgent 路由、角色授权、最后 owner 保护和 active Run 移除保护，以及共享 Conversation、`target_agent_id` 发送、Conversation/Message/Run/SSE 的 Project 授权。2H+2A、viewer 只读、非成员 403、active Run 409、sender-scoped 幂等和单用户回归已由 Docker E2E 覆盖。原生前端已接入 Project-first 路由与必填 `target_agent_id`，单用户与 2H+2A 浏览器 E2E 均已通过。
+工程包 B/C 已实现 Project、ProjectMember、ProjectAgent 路由、角色授权、最后 owner 保护和 active Run 移除保护，以及共享 Conversation、必填 `client_request_id`/`target_agent_id` 发送、Conversation/Message/Run/SSE 的 Project 授权和显式 Run 发起者。2H+2A、viewer 只读、非成员 403、active Run 409、sender-scoped 幂等和单用户回归已由 Docker E2E 覆盖。原生前端已接入 Project-first 路由与必填发送字段，单用户与 2H+2A 浏览器 E2E 均已通过。

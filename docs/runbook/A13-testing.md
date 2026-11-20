@@ -5,7 +5,8 @@
 | 层 | 命令 | 覆盖 |
 |---|---|---|
 | 契约 | `./scripts/test-contracts.ps1` | OpenAPI、6 RPC、SSE、错误码、Protobuf |
-| Docker 全量 | `./scripts/setup-dev.ps1 -Up` + `./scripts/test.ps1 -Docker` | 契约、Go test/vet、前端检查、单用户 E2E、2H+2A E2E、Project fixture、迁移重放；不依赖宿主机 Python/protoc/Go |
+| 连接池 | `./scripts/test-pool.ps1 -Docker` | 256 请求/32 并发、连接上限、idle/active 归还 |
+| Docker 全量 | `./scripts/setup-dev.ps1 -Up` + `./scripts/test.ps1 -Docker` | 契约、Go test/vet、前端检查、连接池、单用户 E2E、2H+2A E2E、Project fixture、迁移重放；不依赖宿主机 Python/protoc/Go |
 | C++ 构建 | `./scripts/build.ps1` | Drogon、libpq、OpenSSL、gRPC 链接 |
 | Worker 单元 | `go test ./worker/...` | Mock 流式、提示词、取消 |
 | 前端状态 | `node tests/frontend_state_test.js` | 角色控件、Project 路由、target Agent、Retry 防重、刷新恢复、Conversation `run.available`、共享 Run 发现、SSE 游标/去重 |

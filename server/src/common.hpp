@@ -25,6 +25,8 @@ using Json = nlohmann::json;
 
 struct Config {
     std::string database_url{"host=127.0.0.1 port=5432 dbname=workspace user=workspace password=workspace"};
+    int db_pool_size{8};
+    int db_acquire_timeout_ms{5000};
     std::string http_host{"0.0.0.0"};
     int http_port{8080};
     std::string grpc_host{"0.0.0.0"};
@@ -44,6 +46,8 @@ struct Config {
             return std::string(raw);
         };
         if (auto v = env("DATABASE_URL")) c.database_url = *v;
+        if (auto v = env("DB_POOL_SIZE")) c.db_pool_size = std::stoi(*v);
+        if (auto v = env("DB_ACQUIRE_TIMEOUT_MS")) c.db_acquire_timeout_ms = std::stoi(*v);
         if (auto v = env("HTTP_HOST")) c.http_host = *v;
         if (auto v = env("HTTP_PORT")) c.http_port = std::stoi(*v);
         if (auto v = env("GRPC_HOST")) c.grpc_host = *v;

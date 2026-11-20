@@ -51,7 +51,7 @@ agent_contract:
 ### 已实现
 
 - 原生 HTML/CSS/JavaScript Project-first 登录与多人对话工作台。
-- C++ Drogon REST/SSE Core。
+- C++ Drogon REST/SSE Core，含固定上限 PostgreSQL 连接池与获取超时。
 - 6 个 gRPC RPC 与 Go Worker。
 - PostgreSQL 持久化、事务、Job 租约、重试、取消和幂等。
 - Mock 流式 Provider 与 OpenAI-compatible Provider 适配器。
@@ -78,6 +78,7 @@ agent_contract:
 - owner/editor 只能取消/重试 `runs.initiated_by_user_id = current_user_id` 的 Run；owner 可取消/重试任意 Run。
 - Agent 归 owner 所有；只有 Agent owner 能把自己的 active Agent 加入 Project。
 - 非 Project 成员访问 Project 资源统一返回 403；一个 Conversation 同时最多一个 queued/running Run。
+- C++ 连接池默认上限 8、获取超时 5000ms；事务未提交会话归还前会回滚，失效连接不回到池。
 - Conversation 事件与 Run SSE 使用同一 Project membership 授权边界；viewer 可订阅，非成员 403。
 - 前端按钮状态只用于交互，服务端始终是唯一授权依据。
 

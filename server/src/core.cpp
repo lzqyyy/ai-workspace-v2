@@ -127,7 +127,9 @@ std::string ensure_legacy_project(PgSession& s, const std::string& user_id, cons
 
 } // namespace
 
-CoreService::CoreService(Config config) : config_(std::move(config)), db_(config_.database_url) {}
+CoreService::CoreService(Config config)
+    : config_(std::move(config)),
+      db_(config_.database_url, config_.db_pool_size, config_.db_acquire_timeout_ms) {}
 
 void CoreService::require_uuid(const std::string& value, const std::string& field)
 {

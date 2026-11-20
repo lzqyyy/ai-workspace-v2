@@ -22,6 +22,8 @@ services:
       dockerfile: server/Dockerfile
     environment:
       DATABASE_URL: host=postgres port=5432 dbname=${POSTGRES_DB:-workspace} user=${POSTGRES_USER:-workspace} password=${POSTGRES_PASSWORD:-workspace_dev_password}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-8}
+      DB_ACQUIRE_TIMEOUT_MS: ${DB_ACQUIRE_TIMEOUT_MS:-5000}
       HTTP_HOST: 0.0.0.0
       HTTP_PORT: 8080
       GRPC_HOST: 0.0.0.0

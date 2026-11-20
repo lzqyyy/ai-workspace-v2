@@ -2,7 +2,7 @@
 
 本仓交付当前最小 MVP：两个人类与两个 Agent 在同一 Project、同一共享 Conversation 中协作。浏览器只连接 C++ Core，C++ 是唯一 PostgreSQL 业务写入者，Go Worker 通过 gRPC 领取 Job 并执行 Mock/兼容模型流式调用。
 
-当前状态：`V0.2.0` 候选为 `REVIEW`；分支已推送 `origin`，尚未合并 `main`，尚未创建 `V0.2.0` tag。验收事实见 `docs/acceptance/V0.2-multiplayer-mvp.md`。
+当前状态：`V0.2.0` 候选为 `REVIEW`；当前工作分支为 `agent/core/conversation-realtime`，尚未 push 或合并 `main`，尚未创建 `V0.2.0` tag。验收事实见 `docs/acceptance/V0.2-multiplayer-mvp.md`。
 
 ```text
 Browser -> C++ HTTP/SSE :8080 -> PostgreSQL :5432
@@ -18,7 +18,8 @@ Browser -> C++ HTTP/SSE :8080 -> PostgreSQL :5432
 - Project member Run/SSE 权限；owner/editor 操作自己的 Run，owner 可操作任意 Run，viewer 只读。
 - 原生 HTML/CSS/JavaScript Project-first 工作台、目标 Agent 选择、Conversation `run.available` 实时发现、共享 Run SSE 与断线回放。
 - 2.5 秒消息轮询保留为发现/刷新兜底；新 Run 不再只依赖轮询。
-- Docker-first 启动、Docker/浏览器 E2E、迁移重放、health 与演示脚本。
+- C++ PostgreSQL 固定上限连接池：复用连接、获取超时、事务回滚与失效连接丢弃。
+- Docker-first 启动、Docker/浏览器 E2E、连接池压力、迁移重放、health 与演示脚本。
 
 ## 快速启动
 
@@ -55,7 +56,7 @@ Docker-first 全量：
 ./scripts/test.ps1 -Docker
 ```
 
-包含契约、Go Worker test/vet、前端状态、单用户 E2E、2H+2A API E2E、Project 权限 fixture、审计与迁移重放。
+包含契约、Go Worker test/vet、前端状态、连接池并发/归还、单用户 E2E、2H+2A API E2E、Project 权限 fixture、审计与迁移重放。
 
 浏览器 E2E：
 
@@ -69,6 +70,7 @@ Docker-first 全量：
 专项：
 
 ```powershell
+./scripts/test-pool.ps1 -Docker
 ./scripts/test-migrations.ps1 -Docker
 ./scripts/test-health.ps1
 ./scripts/test-lease.ps1
@@ -96,6 +98,10 @@ Docker-first 全量：
 - 部署与运维：`docs/runbook/A03-deployment.md`、`docs/runbook/A14-operations.md`
 - 2H+2A 演示：`docs/runbook/A15-multiplayer-demo.md`
 - 交接记录：`docs/handoffs/`
+
+## 运行配置
+
+Core 通过 `DB_POOL_SIZE`（默认 `8`）和 `DB_ACQUIRE_TIMEOUT_MS`（默认 `5000`）控制 PostgreSQL 连接池。
 
 ## 当前限制
 

@@ -43,3 +43,11 @@
 - 页面刷新从 localStorage 恢复 `run_id + lastEventId + partial content`。
 - 若历史中已有该 Run 的最终消息，则清除暂存，不重复订阅，并显示已完成状态。
 - Retry 请求为前端 single-flight：请求期间禁用重试按钮，避免双击创建多个 Run。
+
+## 6. PostgreSQL 连接池
+
+- 默认 `DB_POOL_SIZE=8`、`DB_ACQUIRE_TIMEOUT_MS=5000`。
+- `PgSession` 从池中借用连接，析构时自动归还；未提交事务先回滚。
+- 查询失败、迁移失败或连接状态异常时丢弃物理连接，不把失败事务放回池。
+- health 检查也经过同一连接池，确保复用而非旁路新建连接。
+- `scripts/test-pool.ps1 -Docker` 用 256 请求/32 并发验证连接上限和归还状态。

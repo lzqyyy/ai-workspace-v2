@@ -5,6 +5,8 @@
 | 变量 | 进程 | 默认值 | 说明 |
 |---|---|---|---|
 | `DATABASE_URL` | Core | 本地 workspace | libpq conninfo |
+| `DB_POOL_SIZE` | Core | 8 | PostgreSQL 连接池上限 |
+| `DB_ACQUIRE_TIMEOUT_MS` | Core | 5000 | 获取连接超时 |
 | `HTTP_HOST/HTTP_PORT` | Core | 0.0.0.0/8080 | 唯一浏览器入口 |
 | `GRPC_HOST/GRPC_PORT` | Core | 0.0.0.0/50051 | 仅内部网络 |
 | `MIGRATIONS_DIR` | Core | db/migrations | 启动时幂等迁移 |
@@ -46,7 +48,7 @@ docker compose --env-file .env -f deploy/docker-compose.yml down
 ./scripts/test.ps1 -Docker
 ```
 
-`setup-dev.ps1` 从 `.env.example` 创建缺失的 `.env`、校验 Compose、构建 Core/Worker 与可缓存的 contract-tools 镜像，然后等待健康检查。`test.ps1 -Docker` 在容器中运行契约、Go test/vet、前端检查与 E2E，不要求宿主安装 Python、protoc 或 Go；Go module 缓存使用命名卷复用。E2E helper 通过 `GRPC_ADDR` 使用 Compose 内部地址。
+`setup-dev.ps1` 从 `.env.example` 创建缺失的 `.env`、校验 Compose、构建 Core/Worker 与可缓存的 contract-tools 镜像，然后等待健康检查。`test.ps1 -Docker` 在容器中运行契约、Go test/vet、前端检查、连接池压力与 E2E，不要求宿主安装 Python、protoc 或 Go；Go module 缓存使用命名卷复用。E2E helper 通过 `GRPC_ADDR` 使用 Compose 内部地址。
 
 ## 5. 可选的本机无 Docker 开发
 

@@ -24,8 +24,9 @@ int main()
         Config config = Config::load();
 
         stage = "database.connect";
-        LOG_INFO << "startup stage=database.connect";
-        Database database(config.database_url);
+        LOG_INFO << "startup stage=database.connect pool_max=" << config.db_pool_size
+                 << " acquire_timeout_ms=" << config.db_acquire_timeout_ms;
+        Database database(config.database_url, config.db_pool_size, config.db_acquire_timeout_ms);
         (void)database.session();
 
         stage = "database.migrate";

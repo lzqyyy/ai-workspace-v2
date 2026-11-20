@@ -25,8 +25,11 @@ int main()
 
         stage = "database.connect";
         LOG_INFO << "startup stage=database.connect pool_max=" << config.db_pool_size
-                 << " acquire_timeout_ms=" << config.db_acquire_timeout_ms;
-        Database database(config.database_url, config.db_pool_size, config.db_acquire_timeout_ms);
+                 << " acquire_timeout_ms=" << config.db_acquire_timeout_ms
+                 << " connect_timeout_s=" << config.db_connect_timeout_seconds
+                 << " idle_validate_s=" << config.db_idle_validate_seconds;
+        Database database(config.database_url, config.db_pool_size, config.db_acquire_timeout_ms,
+                           config.db_connect_timeout_seconds, config.db_idle_validate_seconds);
         (void)database.session();
 
         stage = "database.migrate";

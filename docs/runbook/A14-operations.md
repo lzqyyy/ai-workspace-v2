@@ -6,7 +6,9 @@
 |---|---|---|---|
 | `DATABASE_URL` | Core | 本地 workspace | libpq conninfo |
 | `DB_POOL_SIZE` | Core | 8 | PostgreSQL 连接池上限 |
-| `DB_ACQUIRE_TIMEOUT_MS` | Core | 5000 | 获取连接超时 |
+| `DB_ACQUIRE_TIMEOUT_MS` | Core | 5000 | 从连接池获取连接超时 |
+| `DB_CONNECT_TIMEOUT_SECONDS` | Core | 5 | libpq TCP 建连超时 |
+| `DB_IDLE_VALIDATE_SECONDS` | Core | 30 | 空闲连接借出前验证阈值；0 表示每次验证 |
 | `HTTP_HOST/HTTP_PORT` | Core | 0.0.0.0/8080 | 唯一浏览器入口 |
 | `GRPC_HOST/GRPC_PORT` | Core | 0.0.0.0/50051 | 仅内部网络 |
 | `MIGRATIONS_DIR` | Core | db/migrations | 启动时幂等迁移 |

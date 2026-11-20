@@ -46,8 +46,9 @@
 
 ## 6. PostgreSQL 连接池
 
-- 默认 `DB_POOL_SIZE=8`、`DB_ACQUIRE_TIMEOUT_MS=5000`。
+- 默认 `DB_POOL_SIZE=8`、`DB_ACQUIRE_TIMEOUT_MS=5000`、`DB_CONNECT_TIMEOUT_SECONDS=5`。
 - `PgSession` 从池中借用连接，析构时自动归还；未提交事务先回滚。
+- 连接空闲超过 `DB_IDLE_VALIDATE_SECONDS`（默认 30）时，借出前执行一次 `SELECT 1`；失败则丢弃并重建。
 - 查询失败、迁移失败或连接状态异常时丢弃物理连接，不把失败事务放回池。
 - health 检查也经过同一连接池，确保复用而非旁路新建连接。
 - `scripts/test-pool.ps1 -Docker` 用 256 请求/32 并发验证连接上限和归还状态。

@@ -18,7 +18,7 @@ Browser -> C++ HTTP/SSE :8080 -> PostgreSQL :5432
 - Project member Run/SSE 权限；owner/editor 操作自己的 Run，owner 可操作任意 Run，viewer 只读。
 - 原生 HTML/CSS/JavaScript Project-first 工作台、目标 Agent 选择、Conversation `run.available` 实时发现、共享 Run SSE 与断线回放。
 - 2.5 秒消息轮询保留为发现/刷新兜底；新 Run 不再只依赖轮询。
-- C++ PostgreSQL 固定上限连接池：复用连接、获取超时、事务回滚与失效连接丢弃。
+- C++ PostgreSQL 固定上限连接池：复用连接、获取超时、TCP connect_timeout、空闲连接验证、事务回滚与失效连接丢弃。
 - Docker-first 启动、Docker/浏览器 E2E、连接池压力、迁移重放、health 与演示脚本。
 
 ## 快速启动
@@ -101,7 +101,7 @@ Docker-first 全量：
 
 ## 运行配置
 
-Core 通过 `DB_POOL_SIZE`（默认 `8`）和 `DB_ACQUIRE_TIMEOUT_MS`（默认 `5000`）控制 PostgreSQL 连接池。
+Core 通过 `DB_POOL_SIZE`（默认 `8`）、`DB_ACQUIRE_TIMEOUT_MS`（默认 `5000`）、`DB_CONNECT_TIMEOUT_SECONDS`（默认 `5`）和 `DB_IDLE_VALIDATE_SECONDS`（默认 `30`）控制 PostgreSQL 连接池。
 
 ## 当前限制
 

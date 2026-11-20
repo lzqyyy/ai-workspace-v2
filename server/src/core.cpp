@@ -129,7 +129,8 @@ std::string ensure_legacy_project(PgSession& s, const std::string& user_id, cons
 
 CoreService::CoreService(Config config)
     : config_(std::move(config)),
-      db_(config_.database_url, config_.db_pool_size, config_.db_acquire_timeout_ms) {}
+      db_(config_.database_url, config_.db_pool_size, config_.db_acquire_timeout_ms,
+          config_.db_connect_timeout_seconds, config_.db_idle_validate_seconds) {}
 
 void CoreService::require_uuid(const std::string& value, const std::string& field)
 {

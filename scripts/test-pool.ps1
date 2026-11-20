@@ -21,25 +21,65 @@ function Query-Scalar([string]$Sql) {
     return ($value | Out-String).Trim()
 }
 
-$poolSize = if ($env:DB_POOL_SIZE) { [int]$env:DB_POOL_SIZE } else { 8 }
-$network = if ($env:E2E_NETWORK) { $env:E2E_NETWORK } else { 'ai-workspace-v2_internal' }
-Push-Location $root
-try {
-    Invoke-Compose @('up', '-d', '--force-recreate', '--wait', 'core')
-    & docker run --rm --network $network -v "${root}:/src" -w /src `
-        -e BASE_URL=http://core:8080 python:3.12-slim python tests/database_pool.py
-    if ($LASTEXITCODE -ne 0) { throw 'Database pool stress check failed' }
-
+function Get-PoolState {
     $states = Query-Scalar "SELECT count(*) FILTER (WHERE state='idle'), count(*) FILTER (WHERE state='active'), count(*) FROM pg_stat_activity WHERE application_name='ai-workspace-core';"
     $parts = $states.Split('|')
     if ($parts.Count -ne 3) { throw "unexpected pool state output: $states" }
-    $idle = [int]$parts[0]
-    $active = [int]$parts[1]
-    $total = [int]$parts[2]
-    if ($total -lt 1) { throw 'pool retained no PostgreSQL connections' }
-    if ($total -gt $poolSize) { throw "pool opened $total connections, max=$poolSize" }
-    if ($idle -lt 1) { throw "pool returned no idle connections after stress: $states" }
-    if ($active -ne 0) { throw "pool left active connections after stress: $states" }
-    Write-Output ((@{status='PASS'; pool_size=$poolSize; idle=$idle; active=$active; total=$total} | ConvertTo-Json -Compress))
+    return [ordered]@{idle=[int]$parts[0]; active=[int]$parts[1]; total=[int]$parts[2]}
 }
-finally { Pop-Location }
+
+function Assert-PoolState([string]$Label) {
+    $state = Get-PoolState
+    if ($state.total -lt 1) { throw "${Label}: pool retained no PostgreSQL connections" }
+    if ($state.total -gt $poolSize) { throw "${Label}: pool opened $($state.total) connections, max=$poolSize" }
+    if ($state.idle -lt 1) { throw "${Label}: pool returned no idle connections" }
+    if ($state.active -ne 0) { throw "${Label}: pool left active connections" }
+    return $state
+}
+
+function Invoke-Stress {
+    & docker run --rm --network $network -v "${root}:/src" -w /src `
+        -e BASE_URL=http://core:8080 python:3.12-slim python tests/database_pool.py
+    if ($LASTEXITCODE -ne 0) { throw 'Database pool stress check failed' }
+}
+
+$poolSize = if ($env:DB_POOL_SIZE) { [int]$env:DB_POOL_SIZE } else { 8 }
+$network = if ($env:E2E_NETWORK) { $env:E2E_NETWORK } else { 'ai-workspace-v2_internal' }
+$previousIdleValidation = $env:DB_IDLE_VALIDATE_SECONDS
+Push-Location $root
+try {
+    # Force checkout-time validation so stale idle connections must be discarded.
+    $env:DB_IDLE_VALIDATE_SECONDS = '0'
+    Invoke-Compose @('up', '-d', '--force-recreate', '--wait', 'core')
+    Invoke-Stress
+    $first = Assert-PoolState 'initial stress'
+    Write-Output (($first + @{status='PASS'; pool_size=$poolSize}) | ConvertTo-Json -Compress)
+
+    Invoke-Compose @('stop', 'postgres')
+    Invoke-Compose @('up', '-d', '--wait', 'postgres')
+    Invoke-Stress
+    $recovered = Assert-PoolState 'recovery stress'
+    Write-Output (($recovered + @{status='PASS'; recovery='PASS'; pool_size=$poolSize}) | ConvertTo-Json -Compress)
+
+    $connectWatch = [Diagnostics.Stopwatch]::StartNew()
+    & docker run --rm --network $network `
+        -e DATABASE_URL='host=203.0.113.1 port=5432 dbname=workspace user=workspace password=workspace' `
+        -e DB_CONNECT_TIMEOUT_SECONDS=1 -e HTTP_PORT=18080 -e GRPC_PORT=150051 `
+        ai-workspace-v2-core:latest *> $null
+    $connectExit = $LASTEXITCODE
+    $connectWatch.Stop()
+    if ($connectExit -eq 0) { throw 'unreachable database unexpectedly allowed Core startup' }
+    if ($connectWatch.ElapsedMilliseconds -gt 8000) {
+        throw "database connect timeout exceeded budget: $($connectWatch.ElapsedMilliseconds)ms"
+    }
+    Write-Output (ConvertTo-Json -Compress @{status='PASS'; connect_timeout='PASS'; elapsed_ms=[int]$connectWatch.ElapsedMilliseconds})
+}
+finally {
+    if ($null -eq $previousIdleValidation) {
+        Remove-Item Env:DB_IDLE_VALIDATE_SECONDS -ErrorAction SilentlyContinue
+    } else {
+        $env:DB_IDLE_VALIDATE_SECONDS = $previousIdleValidation
+    }
+    try { Invoke-Compose @('up', '-d', '--force-recreate', '--wait', 'core') } catch { Write-Warning $_ }
+    Pop-Location
+}

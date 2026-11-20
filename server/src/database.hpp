@@ -67,7 +67,8 @@ private:
 
 class Database {
 public:
-    explicit Database(std::string conninfo, int max_connections = 8, int acquire_timeout_ms = 5000);
+    explicit Database(std::string conninfo, int max_connections = 8, int acquire_timeout_ms = 5000,
+                      int connect_timeout_seconds = 5, int idle_validate_seconds = 30);
     PgSession session() const;
     bool healthy() const;
     void applyMigrations(const std::string& directory) const;

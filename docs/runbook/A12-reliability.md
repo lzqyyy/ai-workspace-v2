@@ -25,6 +25,7 @@
 - Retry：`Idempotency-Key` 按用户幂等；同一用户重复使用同一 key 返回第一次创建的 retry `run_id`。
 - 最终消息：`(run_id)` partial unique + `ON CONFLICT DO NOTHING`。
 - 终态回调：已终态 Run 对相同 Job/Run 再次 UpdateJobStatus 返回 `accepted=true, duplicate=true`，不新增消息或事件。
+- Conversation 事件：新 Run 的 `run.available` 与 Message/Run/Job 同事务写入；显式游标可回放，缺失游标从当前 tail 开始。
 - Worker 事件：`(run_id, seq)` 唯一；相同内容视为 duplicate，不同内容返回冲突。
 - 事件游标：客户端用 `Last-Event-ID`/`after` 重放，不重复执行模型。
 

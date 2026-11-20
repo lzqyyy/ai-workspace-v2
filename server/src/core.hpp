@@ -58,6 +58,8 @@ public:
     Json getRun(const std::string& user_id, const std::string& run_id, const std::string& request_id);
     Json listRunEvents(const std::string& user_id, const std::string& run_id, long long after_seq,
                        const std::string& request_id);
+    Json listConversationEvents(const std::string& user_id, const std::string& conversation_id, long long after_seq,
+                                const std::string& request_id);
     Json health();
 
     Json claimNextJob(const std::string& worker_id, const std::string& request_id);
@@ -90,6 +92,9 @@ private:
     static void require_uuid(const std::string& value, const std::string& field);
     static void require_text(const std::string& value, const std::string& field, std::size_t max_length);
     static bool retryable_error(const std::string& error_code);
+    void appendRunAvailable(PgSession& session, const std::string& conversation_id, const std::string& run_id,
+                            const std::string& target_agent_id, const std::string& initiated_by_user_id,
+                            const std::string& status, const std::string& request_id);
 
     Config config_;
     Database db_;

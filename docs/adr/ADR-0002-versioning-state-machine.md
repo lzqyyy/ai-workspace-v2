@@ -6,10 +6,10 @@
 
 ## 决策
 
-- OpenAPI 当前版本为 `1.0.1`；Protobuf、SSE envelope、错误码当前版本为 `1.0.0`。兼容性以主版本为准。
+- OpenAPI 当前版本为 `1.1.0`；Run SSE envelope、Protobuf、错误码当前版本为 `1.0.0`，Conversation 事件契约单独为 `1.0`。兼容性以主版本为准。
 - Run 与 Job 共享业务状态集合：`queued -> running -> succeeded | failed | cancelled`。
 - 终态不可逆；所有终态写入必须幂等。
-- SSE 事件序号按 `run_id` 独立、从 1 单调递增，并先持久化后发送。
+- Run SSE 事件序号按 `run_id` 独立、Conversation 事件序号按 `conversation_id` 独立，均从 1 单调递增，并先持久化后发送。
 - 破坏性变化必须新增 ADR、升级主版本并同时通知 CORE、WORKER、WEB。
 
 ## 兼容性

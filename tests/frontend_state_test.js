@@ -193,9 +193,12 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   vm.runInContext(`
     state.run = null; state.activeConversation = {id:'conversation-shared'};
     state.messages = [{sender_type:'user', sender_id:'user-b', run_id:'run-observed'}]; state.terminalRuns = new Set();
-    beginRun = (...args) => { __observedArgs = args; }; discoverRunFromMessages();
+    beginRun = (...args) => { __observedArgs = args; };
+    api = async (path) => { __observedRunPath = path; return {status:'running', agent_id:'agent-real', initiated_by_user_id:'user-b'}; };
   `, context);
-  assert.deepStrictEqual(Array.from(context.__observedArgs), ['run-observed', 'conversation-shared', 0, '', 'user-b', 'agent-1']);
+  await context.discoverRunFromMessages();
+  assert.strictEqual(context.__observedRunPath, '/api/v1/runs/run-observed', 'fallback discovery must read real Run metadata');
+  assert.deepStrictEqual(Array.from(context.__observedArgs), ['run-observed', 'conversation-shared', 0, '', 'user-b', 'agent-real']);
 
   let eventSourceUrl = '';
   context.EventSource = class {
@@ -213,6 +216,29 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   context.handleRunEvent('message.delta', {data: JSON.stringify({seq: 10, payload: {delta: 'ial'}})}, 'run-running');
   assert.strictEqual(vm.runInContext('state.run.lastEventId', context), 10, 'SSE cursor must advance');
   assert.strictEqual(vm.runInContext('state.run.partial', context), 'partial', 'duplicate SSE events must be deduplicated');
+
+  let conversationSourceUrl = '';
+  context.EventSource = class {
+    constructor(url) { conversationSourceUrl = url; this.readyState = 0; }
+    addEventListener() {}
+    close() {}
+  };
+  vm.runInContext(`
+    localStorage.removeItem('workspace.conversationEventCursor.conversation-events');
+    state.activeConversation = {id:'conversation-events'}; state.conversationEventSource = null; state.conversationEventCursor = 0;
+    state.messages = []; state.run = null; state.terminalRuns = new Set(); __conversationEvents = 0; __conversationArgs = null;
+    renderMessages = () => {}; applyPermissions = () => {}; persistRun = () => {};
+    beginRun = (...args) => { __conversationEvents += 1; __conversationArgs = args; };
+    connectConversationStream();
+  `, context);
+  assert.ok(conversationSourceUrl.includes('/api/v1/conversations/conversation-events/events'), 'Conversation stream URL missing');
+  assert.ok(!conversationSourceUrl.includes('after=0'), 'first connection should start at the server tail');
+  const conversationEvent = JSON.stringify({schema_version:'1.0', conversation_id:'conversation-events', seq:7, type:'run.available', payload:{run_id:'run-event', target_agent_id:'agent-real', initiated_by_user_id:'user-b', status:'queued'}});
+  context.handleConversationEvent({data:conversationEvent}, 'conversation-events');
+  context.handleConversationEvent({data:conversationEvent}, 'conversation-events');
+  assert.strictEqual(vm.runInContext('__conversationEvents', context), 1, 'duplicate Conversation events must be ignored');
+  assert.deepStrictEqual(Array.from(context.__conversationArgs), ['run-event', 'conversation-events', 0, '', 'user-b', 'agent-real']);
+  assert.strictEqual(localStorage.getItem('workspace.conversationEventCursor.conversation-events'), '7');
 
   let pollCallback = null;
   context.setInterval = (callback) => { pollCallback = callback; return 1; };
@@ -258,5 +284,5 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   await context.__sidebarClose;
   assert.strictEqual(sidebarClasses.has('open'), false, 'selecting a conversation must close mobile sidebar');
 
-  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true}));
+  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, conversation_sse:true, conversation_event_real_agent:true, conversation_event_dedupe:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true}));
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -24,6 +24,7 @@ const els = {
 const state = {
   user: null, projects: [], project: null, role: null, members: [], projectAgents: [], ownedAgents: [],
   conversations: [], activeConversation: null, messages: [], targetAgentId: null, run: null, eventSource: null,
+  conversationEventSource: null, conversationEventCursor: 0,
   lastRunId: null, lastRunOwnerId: null, terminalRuns: new Set(), retrying: false, sending: false,
   cancelling: false, retryVisible: false, pollTimer: null, messageLoadSeq: 0, toastTimer: null
 };
@@ -62,7 +63,7 @@ function canRetryLast() { return canWrite() && Boolean(state.lastRunId) && (stat
 function activeRun() { return state.run && state.run.conversationId === state.activeConversation?.id ? state.run : null; }
 function currentMember() { return state.members.find((member) => member.user_id === state.user?.id) || null; }
 
-function showAuth() { stopPolling(); closeRunStream(); els.workspace.classList.add('hidden'); els.auth.classList.remove('hidden'); els.loginButton.disabled = false; setTimeout(() => $('username').focus(), 20); }
+function showAuth() { stopPolling(); closeRunStream(); closeConversationStream(); els.workspace.classList.add('hidden'); els.auth.classList.remove('hidden'); els.loginButton.disabled = false; setTimeout(() => $('username').focus(), 20); }
 function showWorkspace() { els.auth.classList.add('hidden'); els.workspace.classList.remove('hidden'); }
 function toast(message) { clearTimeout(state.toastTimer); els.toast.textContent = message; els.toast.classList.remove('hidden'); state.toastTimer = setTimeout(() => els.toast.classList.add('hidden'), 2600); }
 function formatTime(value) { if (!value) return ''; const date = new Date(value); if (Number.isNaN(date.getTime())) return ''; return new Intl.DateTimeFormat('zh-CN', {hour: '2-digit', minute: '2-digit'}).format(date); }
@@ -105,10 +106,10 @@ async function login(event) {
 }
 async function logout() {
   try { await api('/api/v1/auth/logout', {method: 'POST'}); } catch {}
-  stopPolling(); closeRunStream(); localStorage.removeItem('workspace.activeRun'); localStorage.removeItem('workspace.projectId');
+  stopPolling(); closeRunStream(); closeConversationStream(); localStorage.removeItem('workspace.activeRun'); localStorage.removeItem('workspace.projectId');
   state.user = null; state.projects = []; state.project = null; state.role = null; state.members = []; state.projectAgents = [];
   state.ownedAgents = []; state.conversations = []; state.messages = []; state.activeConversation = null; state.run = null;
-  state.lastRunId = null; state.lastRunOwnerId = null; showAuth();
+  state.conversationEventCursor = 0; state.lastRunId = null; state.lastRunOwnerId = null; showAuth();
 }
 async function bootstrap() {
   try {
@@ -132,6 +133,7 @@ function renderProjectSelect() {
   if (state.project) els.projectSelect.value = state.project.id;
 }
 function resetProjectSelection() {
+  closeConversationStream();
   state.project = null; state.role = null; state.members = []; state.projectAgents = []; state.conversations = []; state.messages = [];
   state.activeConversation = null; state.targetAgentId = null; els.projectName.textContent = '未选择 Project';
   els.projectDescription.textContent = '创建或加入 Project 后开始协作'; els.roleBadge.textContent = '—'; els.roleBadge.className = 'role-badge';
@@ -139,6 +141,7 @@ function resetProjectSelection() {
 }
 async function selectProject(projectId) {
   if (!projectId) return;
+  closeConversationStream();
   const encoded = encodeURIComponent(projectId);
   const [project, members, agents, conversations] = await Promise.all([
     api(`/api/v1/projects/${encoded}`), api(`/api/v1/projects/${encoded}/members`),
@@ -244,7 +247,7 @@ async function selectConversation(id) {
   state.activeConversation = conversation; localStorage.setItem(`workspace.conversation.${state.project.id}`, conversation.id);
   renderConversations(); els.emptyState.classList.add('hidden'); els.messages.classList.remove('hidden');
   els.conversationTitle.textContent = conversation.title; els.conversationSubtitle.textContent = `${state.project.name} · ${state.role} · ${state.projectAgents.length} 个 Project Agent`;
-  clearError(); await loadMessages(true); if (state.run?.conversationId === id && !state.eventSource) connectRun(); startPolling();
+  clearError(); connectConversationStream(); await loadMessages(true); if (state.run?.conversationId === id && !state.eventSource) connectRun(); startPolling();
 }
 function messageSenderName(message) {
   if (message.sender_type === 'agent') { const projectAgent = state.projectAgents.find((item) => item.agent_id === message.sender_id); return projectAgent?.agent?.name || state.activeConversation?.agent_name || 'Agent'; }
@@ -272,15 +275,21 @@ async function loadMessages(showError = true) {
   try {
     const response = await api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`);
     if (loadSeq !== state.messageLoadSeq || state.activeConversation?.id !== conversationId) return false;
-    state.messages = response.items || []; const discovered = discoverRunFromMessages(); renderMessages(); return discovered;
+    state.messages = response.items || []; const discovered = await discoverRunFromMessages(); renderMessages(); return discovered;
   } catch (error) { if (loadSeq === state.messageLoadSeq && showError && state.activeConversation?.id === conversationId) setError(error.message, error.retryable); return false; }
 }
-function discoverRunFromMessages() {
+async function discoverRunFromMessages() {
   if (state.run || !state.activeConversation) return false;
+  const conversationId = state.activeConversation.id;
   const completed = new Set(state.messages.filter((message) => message.sender_type === 'agent' && message.run_id).map((message) => message.run_id));
   const pending = [...state.messages].reverse().find((message) => message.sender_type === 'user' && message.run_id && !completed.has(message.run_id) && !state.terminalRuns.has(message.run_id));
   if (!pending) return false;
-  beginRun(pending.run_id, state.activeConversation.id, 0, '', pending.sender_id, state.targetAgentId); return true;
+  try {
+    const run = await api(`/api/v1/runs/${encodeURIComponent(pending.run_id)}`);
+    if (state.run || state.activeConversation?.id !== conversationId) return false;
+    if (!['queued', 'running'].includes(run.status)) { state.terminalRuns.add(pending.run_id); return false; }
+    beginRun(pending.run_id, conversationId, 0, '', run.initiated_by_user_id, run.agent_id); return true;
+  } catch { return false; }
 }
 function persistRun() {
   if (!state.run) { localStorage.removeItem('workspace.activeRun'); return; }
@@ -289,6 +298,50 @@ function persistRun() {
     lastEventId: state.run.lastEventId, partial: state.run.partial}));
 }
 function closeRunStream() { if (state.eventSource) { state.eventSource.close(); state.eventSource = null; } }
+function conversationCursorKey(conversationId) { return `workspace.conversationEventCursor.${conversationId}`; }
+function closeConversationStream() { if (state.conversationEventSource) { state.conversationEventSource.close(); state.conversationEventSource = null; } }
+function connectConversationStream() {
+  if (!state.activeConversation) return;
+  closeConversationStream();
+  const conversation = state.activeConversation;
+  const savedCursor = Number(localStorage.getItem(conversationCursorKey(conversation.id))) || 0;
+  state.conversationEventCursor = savedCursor;
+  const requestId = `web-conversation-sse-${uuid()}`;
+  const after = savedCursor > 0 ? `&after=${savedCursor}` : '';
+  const source = new EventSource(`/api/v1/conversations/${encodeURIComponent(conversation.id)}/events?request_id=${encodeURIComponent(requestId)}${after}`);
+  state.conversationEventSource = source;
+  source.addEventListener('run.available', (event) => handleConversationEvent(event, conversation.id));
+  source.onerror = () => {
+    if (state.activeConversation?.id !== conversation.id || state.conversationEventSource !== source) return;
+    if (source.readyState === 2) {
+      source.close(); state.conversationEventSource = null;
+      setTimeout(() => { if (state.activeConversation?.id === conversation.id && !state.conversationEventSource) connectConversationStream(); }, 1800);
+    }
+  };
+}
+function handleConversationEvent(event, conversationId) {
+  if (state.activeConversation?.id !== conversationId) return;
+  let envelope; try { envelope = JSON.parse(event.data); } catch { return; }
+  const seq = Number(envelope.seq) || 0;
+  if (seq && seq <= state.conversationEventCursor) return;
+  if (seq) {
+    state.conversationEventCursor = seq;
+    localStorage.setItem(conversationCursorKey(conversationId), String(seq));
+  }
+  const payload = envelope.payload || {};
+  if (envelope.type !== 'run.available' || !payload.run_id || !payload.target_agent_id || !payload.initiated_by_user_id) return;
+  if (!['queued', 'running'].includes(payload.status) || state.terminalRuns.has(payload.run_id)) return;
+  if (state.messages.some((message) => message.sender_type === 'agent' && message.run_id === payload.run_id)) {
+    state.terminalRuns.add(payload.run_id); return;
+  }
+  if (state.run?.runId === payload.run_id) {
+    state.run.targetAgentId = payload.target_agent_id;
+    state.run.ownerId = payload.initiated_by_user_id;
+    persistRun(); renderMessages(); applyPermissions(); return;
+  }
+  if (state.run?.conversationId === conversationId) return;
+  beginRun(payload.run_id, conversationId, 0, '', payload.initiated_by_user_id, payload.target_agent_id);
+}
 
 async function sendMessage(event) {
   event?.preventDefault(); const content = els.messageInput.value.trim();
@@ -306,7 +359,7 @@ async function sendMessage(event) {
   } catch (error) {
     state.sending = false; setRunState('error', error.status === 409 ? '运行冲突' : '创建失败');
     setError(error.status === 409 ? '当前共享会话已有运行中的任务，请等待完成后再发送。' : error.message, error.retryable);
-    await loadMessages(false); discoverRunFromMessages();
+    await loadMessages(false);
   } finally { if (!state.run) setSending(false); }
 }
 async function createConversation() {
@@ -349,10 +402,22 @@ async function retryRun() {
   finally { state.retrying = false; if (!state.run) setSending(false); }
 }
 function beginRun(runId, conversationId, lastEventId = 0, partial = '', ownerId = null, targetAgentId = null) {
-  closeRunStream(); state.run = {runId, conversationId, ownerId, targetAgentId, lastEventId: Number(lastEventId) || 0, partial: partial || '', reconnecting: false};
-  state.lastRunId = runId; state.lastRunOwnerId = ownerId; state.sending = false; persistRun();
-  setRunState('active', ownerId && ownerId !== state.user?.id ? '协作者运行中' : 'Run 已排队'); clearError();
-  if (state.activeConversation?.id === conversationId) renderMessages(); applyPermissions(); connectRun();
+  const existing = state.run?.runId === runId ? state.run : null;
+  if (!existing) closeRunStream();
+  state.run = {
+    runId, conversationId,
+    ownerId: existing?.ownerId || ownerId || null,
+    targetAgentId: existing?.targetAgentId || targetAgentId || null,
+    lastEventId: existing ? existing.lastEventId : Number(lastEventId) || 0,
+    partial: existing ? existing.partial : partial || '',
+    reconnecting: false,
+  };
+  state.lastRunId = runId; state.lastRunOwnerId = state.run.ownerId; state.sending = false; persistRun();
+  setRunState('active', state.run.ownerId && state.run.ownerId !== state.user?.id ? '协作者运行中' : 'Run 已排队'); clearError();
+  if (state.activeConversation?.id === conversationId) {
+    renderMessages(); applyPermissions();
+    if (!state.eventSource) connectRun();
+  }
 }
 function connectRun() {
   if (!state.run) return; closeRunStream(); const run = state.run; const requestId = `web-sse-${uuid()}`;

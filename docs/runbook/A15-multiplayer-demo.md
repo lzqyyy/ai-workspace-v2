@@ -97,11 +97,11 @@ curl.exe -fsS http://127.0.0.1:8080/api/v1/health
 - 发送返回 400：确认前端已选择 Project Agent，请求体包含 `target_agent_id`。
 - 发送返回 409：同一 Conversation 已有 queued/running Run；等待完成或由有权限成员取消。
 - 无法加入 Agent：确认 Agent owner 是 Project 成员且角色为 owner/editor。
-- 看不到新 Run：先在当前 Conversation 等待一个短轮询周期；前端发现 Run 后会订阅既有 SSE URL。
+- 看不到新 Run：检查浏览器 Network 是否建立 `/api/v1/conversations/{conversation_id}/events`；仍可等待 2.5 秒轮询兜底，前端发现 Run 后会订阅既有 Run SSE URL。
 
 ## 7. 已知限制
 
-- 不提供 Conversation 级事件流；跨成员新 Run 发现存在最多约 2.5 秒延迟。
+- Conversation 事件流只通知 `run.available`，不承载模型 delta；模型内容仍由 Run SSE 提供。
 - 同一 Project 的写路径按 Project 行锁串行化，适配当前 MVP 规模。
 - 本版不支持多 Run 并行、消息编辑删除、文件、共享记忆、插件、诊断/匹配/Agreement/Trial。
 - 生产部署仍需 HTTPS、正式账号管理、备份和 Worker 扩容。

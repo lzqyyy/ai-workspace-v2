@@ -8,10 +8,11 @@
 | Docker 全量 | `./scripts/setup-dev.ps1 -Up` + `./scripts/test.ps1 -Docker` | 契约、Go test/vet、前端检查、单用户 E2E、2H+2A E2E、Project fixture、迁移重放；不依赖宿主机 Python/protoc/Go |
 | C++ 构建 | `./scripts/build.ps1` | Drogon、libpq、OpenSSL、gRPC 链接 |
 | Worker 单元 | `go test ./worker/...` | Mock 流式、提示词、取消 |
-| 前端状态 | `node tests/frontend_state_test.js` | 角色控件、Project 路由、target Agent、Retry 防重、刷新恢复、共享 Run 发现、SSE 游标/去重 |
-| E2E | `./scripts/e2e.ps1` 或 `./scripts/e2e.ps1 -Docker` | 登录、Agent、会话、发送、SSE、落库、幂等、取消、重试、越权、2H+2A |
+| 前端状态 | `node tests/frontend_state_test.js` | 角色控件、Project 路由、target Agent、Retry 防重、刷新恢复、Conversation `run.available`、共享 Run 发现、SSE 游标/去重 |
+| E2E | `./scripts/e2e.ps1` 或 `./scripts/e2e.ps1 -Docker` | 登录、Agent、会话、发送、Run/Conversation SSE、落库、幂等、取消、重试、越权、2H+2A |
+| Conversation 实时专项 | `python tests/conversation_realtime.py` | `run.available` 字段/低延迟、显式回放、viewer 订阅、非成员 403 |
 | 浏览器 E2E | `./scripts/frontend-e2e.ps1` | 真实 Edge/Chrome 登录、Project-first 单用户发送与流式完成 |
-| 2H+2A 浏览器 E2E | `./scripts/frontend-2h2a-e2e.ps1` | 双浏览器上下文、双人类、双 Agent、共享历史、双方 SSE、viewer 只读 |
+| 2H+2A 浏览器 E2E | `./scripts/frontend-2h2a-e2e.ps1` | 双浏览器上下文、双人类、双 Agent、共享历史、双方 Conversation/Run SSE、真实目标 Agent、viewer 只读 |
 | 迁移重放 | `./scripts/test-migrations.ps1 -Docker` | project_id NOT NULL、007 唯一迁移行、Core 重启重新执行迁移 |
 | Lease | `./scripts/test-lease.ps1` | 停止 Worker 后领取 queued Job，错误 lease 被拒绝 |
 | 事件序号 | `./scripts/test-lease.ps1` | 跳号/乱序被拒绝，重复事件仍幂等 |

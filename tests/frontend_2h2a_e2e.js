@@ -108,6 +108,10 @@ class CDP {
     await selectProject(ownerPage,project.id); await selectProject(editorPage,project.id);
     await ownerPage.waitFor(`document.getElementById('conversation-title').textContent === '${conversation.title}'`,25000,'owner shared conversation');
     await editorPage.waitFor(`document.getElementById('conversation-title').textContent === '${conversation.title}'`,25000,'editor shared conversation');
+    const conversationEventUrls=(page)=>page.cdp.events.filter((event)=>event.sessionId===page.session&&event.method==='Network.responseReceived'&&String(event.params?.response?.url||'').includes(`/api/v1/conversations/${conversation.id}/events`)).map((event)=>event.params.response.url);
+    for(let i=0;i<40&&(!conversationEventUrls(ownerPage).length||!conversationEventUrls(editorPage).length);i+=1) await sleep(100);
+    assert.ok(conversationEventUrls(ownerPage).length>0,'owner must subscribe to Conversation run.available SSE');
+    assert.ok(conversationEventUrls(editorPage).length>0,'editor must subscribe to Conversation run.available SSE');
 
     await setAgent(ownerPage,ownerAgent.id);
     await ownerPage.waitFor("!document.getElementById('message-input').disabled && !document.getElementById('send-button').disabled",30000,'owner composer ready');
@@ -158,7 +162,7 @@ class CDP {
     fs.mkdirSync(path.dirname(screenshotPath),{recursive:true});
     const screenshot=await editorPage.cdp.send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false},editorPage.session);
     fs.writeFileSync(screenshotPath,Buffer.from(screenshot.data,'base64'));
-    console.log(JSON.stringify({status:'PASS',project_id:project.id,conversation_id:conversation.id,owner_agent:ownerAgent.name,editor_agent:editorAgent.name,owner_sees_shared_history:true,editor_sees_shared_history:true,owner_sse:ownerSseUrls.length>0,editor_sse:editorSseUrls.length>0,viewer_ui_readonly:true,screenshot:screenshotPath}));
+    console.log(JSON.stringify({status:'PASS',project_id:project.id,conversation_id:conversation.id,owner_agent:ownerAgent.name,editor_agent:editorAgent.name,owner_sees_shared_history:true,editor_sees_shared_history:true,owner_conversation_sse:conversationEventUrls(ownerPage).length>0,editor_conversation_sse:conversationEventUrls(editorPage).length>0,owner_sse:ownerSseUrls.length>0,editor_sse:editorSseUrls.length>0,viewer_ui_readonly:true,screenshot:screenshotPath}));
   } finally {
     for(const item of launches) try{item.cdp?.close();}catch{}
     await Promise.all(launches.map((item)=>stopBrowser(item.browser)));

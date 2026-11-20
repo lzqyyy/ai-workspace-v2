@@ -16,7 +16,8 @@ Browser -> C++ HTTP/SSE :8080 -> PostgreSQL :5432
 - Project-first 共享 Conversation、共享 Message 历史、必填 `target_agent_id`。
 - 同一 Conversation 单 active Run；发送/retry 冲突返回 409。
 - Project member Run/SSE 权限；owner/editor 操作自己的 Run，owner 可操作任意 Run，viewer 只读。
-- 原生 HTML/CSS/JavaScript Project-first 工作台、目标 Agent 选择、共享 SSE 发现与断线回放。
+- 原生 HTML/CSS/JavaScript Project-first 工作台、目标 Agent 选择、Conversation `run.available` 实时发现、共享 Run SSE 与断线回放。
+- 2.5 秒消息轮询保留为发现/刷新兜底；新 Run 不再只依赖轮询。
 - Docker-first 启动、Docker/浏览器 E2E、迁移重放、health 与演示脚本。
 
 ## 快速启动
@@ -100,5 +101,5 @@ Docker-first 全量：
 
 - 未实现 Task/Handoff、文件、共享记忆、插件、诊断、匹配、Agreement、Trial 或多 Run 并行。
 - Project 归档策略已写入最小 MVP PRD，但冻结 OpenAPI 没有归档路由，当前也没有运行时入口；补齐需另行批准版本化契约变更。
-- 新 Run 的跨成员发现依赖活动 Conversation 的短轮询；Run 事件本身仍使用冻结的 SSE 契约与持久化游标。
+- Conversation SSE 与 Run SSE 均由 C++ 查询 PostgreSQL 事件表推动；当前不引入数据库 LISTEN/NOTIFY 或外部消息总线。
 - 生产部署仍需 HTTPS 反向代理、账号管理、Worker 扩容与备份策略。

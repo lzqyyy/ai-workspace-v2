@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AI Workspace V2.0 Core API
-  version: 1.0.1
+  version: 1.1.0
   description: |
     Frozen REST contract between the native browser client and the C++ core.
     All API requests are same-origin and authenticated by an HttpOnly session cookie.
@@ -507,6 +507,44 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/conversations/{conversation_id}/events:
+    parameters:
+      - $ref: '#/components/parameters/ConversationId'
+    get:
+      tags: [Conversations]
+      operationId: streamConversationEvents
+      summary: Subscribe to new Run availability with conversation cursor replay
+      description: Any Project member may stream. Viewer access is read-only; non-members receive 403. Omit cursor to start at the current tail; send Last-Event-ID or after to replay.
+      parameters:
+        - name: request_id
+          in: query
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 100 }
+        - name: Last-Event-ID
+          in: header
+          schema: { type: string }
+        - name: after
+          in: query
+          schema: { type: integer, format: int64, minimum: 0 }
+      responses:
+        '200':
+          description: Conversation SSE stream; event schema is documented in docs/contracts/sse-events.md
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-cache }
+            X-Accel-Buffering:
+              schema: { type: string, const: 'no' }
+          content:
+            text/event-stream:
+              schema: { type: string }
+              example: |
+                retry: 2000
+                id: 1
+                event: run.available
+                data: {"schema_version":"1.0","conversation_id":"...","seq":1,"type":"run.available","payload":{"run_id":"...","target_agent_id":"...","initiated_by_user_id":"...","status":"queued"}}
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/v1/runs/{run_id}/events:
     parameters:
       - $ref: '#/components/parameters/RunId'
@@ -783,16 +821,37 @@ components:
         created_at: { type: string, format: date-time }
     Run:
       type: object
-      required: [id, conversation_id, status, cancel_requested, created_at]
+      required: [id, conversation_id, status, cancel_requested, created_at, agent_id, initiated_by_user_id]
       properties:
         id: { type: string, format: uuid }
         conversation_id: { type: string, format: uuid }
+        agent_id: { type: string, format: uuid, description: Actual target Agent for this Run. }
+        initiated_by_user_id: { type: string, format: uuid, description: User who created or retried this Run. }
         status: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
         cancel_requested: { type: boolean }
         error_code: { type: [string, 'null'] }
         created_at: { type: string, format: date-time }
         started_at: { type: [string, 'null'], format: date-time }
         finished_at: { type: [string, 'null'], format: date-time }
+    ConversationRunAvailablePayload:
+      type: object
+      required: [run_id, target_agent_id, initiated_by_user_id, status]
+      properties:
+        run_id: { type: string, format: uuid }
+        target_agent_id: { type: string, format: uuid }
+        initiated_by_user_id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
+    ConversationEvent:
+      type: object
+      required: [schema_version, request_id, conversation_id, seq, type, occurred_at, payload]
+      properties:
+        schema_version: { type: string, const: '1.0' }
+        request_id: { type: string }
+        conversation_id: { type: string, format: uuid }
+        seq: { type: integer, format: int64, minimum: 1 }
+        type: { type: string, enum: [run.available] }
+        occurred_at: { type: string, format: date-time }
+        payload: { $ref: '#/components/schemas/ConversationRunAvailablePayload' }
     SendMessageResponse:
       type: object
       required: [message, run_id, status, events_url, duplicate]

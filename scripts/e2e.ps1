@@ -35,6 +35,11 @@ if ($Docker) {
             python:3.12-slim python tests/shared_conversation.py
         if ($LASTEXITCODE -ne 0) { throw 'Docker shared Conversation E2E failed' }
 
+        & docker run --rm --network $network -v "${root}:/src" -w /src `
+            -e BASE_URL=http://core:8080 `
+            python:3.12-slim python tests/conversation_realtime.py
+        if ($LASTEXITCODE -ne 0) { throw 'Docker Conversation realtime E2E failed' }
+
         $fixtureProject = '00000000-0000-4000-8000-000000000301'
         $fixtureConversation = '00000000-0000-4000-8000-000000000401'
         $fixtureMessage = '00000000-0000-4000-8000-000000000501'
@@ -145,6 +150,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'E2E failed' }
     & $python @pythonArgs (Join-Path $root 'tests\shared_conversation.py')
     if ($LASTEXITCODE -ne 0) { throw 'Shared Conversation E2E failed' }
+    & $python @pythonArgs (Join-Path $root 'tests\conversation_realtime.py')
+    if ($LASTEXITCODE -ne 0) { throw 'Conversation realtime E2E failed' }
     & $python @pythonArgs (Join-Path $root 'tests\project_api.py')
     if ($LASTEXITCODE -ne 0) { throw 'Project API E2E failed' }
 }

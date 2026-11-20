@@ -15,6 +15,7 @@ MIGRATIONS_DIR = ROOT / "db" / "migrations"
 MULTIPLAYER_MIGRATION = MIGRATIONS_DIR / "006_multiplayer_foundation.sql"
 PROJECT_REQUIRED_MIGRATION = MIGRATIONS_DIR / "007_conversation_project_required.sql"
 INITIATED_MIGRATION = MIGRATIONS_DIR / "008_run_initiated_by.sql"
+CONVERSATION_EVENTS_MIGRATION = MIGRATIONS_DIR / "009_conversation_events.sql"
 
 EXPECTED_PATHS = {
     ("/api/v1/auth/login", "post"),
@@ -25,6 +26,7 @@ EXPECTED_PATHS = {
     ("/api/v1/conversations", "post"),
     ("/api/v1/conversations/{conversation_id}/messages", "get"),
     ("/api/v1/conversations/{conversation_id}/messages", "post"),
+    ("/api/v1/conversations/{conversation_id}/events", "get"),
     ("/api/v1/runs/{run_id}/events", "get"),
     ("/api/v1/runs/{run_id}/cancel", "post"),
     ("/api/v1/health", "get"),
@@ -56,12 +58,13 @@ EXPECTED_EVENTS = {
     "run.failed",
     "run.cancelled",
 }
+EXPECTED_CONVERSATION_EVENTS = {"run.available"}
 
 
 def main() -> int:
     api = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
     assert api["openapi"] == "3.1.0"
-    assert api["info"]["version"] == "1.0.1"
+    assert api["info"]["version"] == "1.1.0"
 
     operations = {
         (path, method)
@@ -86,6 +89,8 @@ def main() -> int:
         "Project",
         "ProjectMember",
         "ProjectAgent",
+        "ConversationEvent",
+        "ConversationRunAvailablePayload",
     ):
         assert name in schemas, f"missing schema: {name}"
     assert schemas["ProjectRole"]["enum"] == ["owner", "editor", "viewer"], "Project role enum mismatch"
@@ -123,6 +128,14 @@ def main() -> int:
     assert send_schema["properties"]["client_request_id"]["minLength"] == 8, "client_request_id minLength mismatch"
     assert send_schema["properties"]["client_request_id"]["maxLength"] == 100, "client_request_id maxLength mismatch"
 
+    run_schema = schemas["Run"]
+    assert run_schema["properties"]["agent_id"]["format"] == "uuid", "Run.agent_id must be a UUID"
+    assert run_schema["properties"]["initiated_by_user_id"]["format"] == "uuid", "Run.initiated_by_user_id must be a UUID"
+    conversation_event = schemas["ConversationEvent"]
+    assert conversation_event["properties"]["conversation_id"]["format"] == "uuid"
+    assert set(conversation_event["properties"]["type"]["enum"]) == EXPECTED_CONVERSATION_EVENTS
+    event_payload_required = set(schemas["ConversationRunAvailablePayload"].get("required", []))
+    assert {"run_id", "target_agent_id", "initiated_by_user_id", "status"} <= event_payload_required
     run_statuses = set(schemas["Run"]["properties"]["status"]["enum"])
     send_statuses = set(schemas["SendMessageResponse"]["properties"]["status"]["enum"])
     assert send_statuses == run_statuses, f"send/retry status mismatch: {send_statuses} != {run_statuses}"
@@ -145,6 +158,8 @@ def main() -> int:
         assert f"`{event}`" in sse, f"missing SSE event: {event}"
     assert "queued -> running -> succeeded" in sse.replace("\\", "")
     assert "Last-Event-ID" in sse
+    for event in EXPECTED_CONVERSATION_EVENTS:
+        assert f"`{event}`" in sse, f"missing Conversation SSE event: {event}"
 
     compose = yaml.safe_load((ROOT / "deploy" / "docker-compose.yml").read_text(encoding="utf-8"))
     services = compose["services"]
@@ -158,6 +173,7 @@ def main() -> int:
     assert MULTIPLAYER_MIGRATION in migrations, "multiplayer foundation migration missing"
     assert PROJECT_REQUIRED_MIGRATION in migrations, "conversation project_id NOT NULL migration missing"
     assert INITIATED_MIGRATION in migrations, "Run initiated_by_user_id migration missing"
+    assert CONVERSATION_EVENTS_MIGRATION in migrations, "Conversation events migration missing"
     migration_text = MULTIPLAYER_MIGRATION.read_text(encoding="utf-8")
     for table in ("projects", "project_members", "project_agents"):
         assert f"CREATE TABLE IF NOT EXISTS {table}" in migration_text, f"missing migration table: {table}"
@@ -190,11 +206,17 @@ def main() -> int:
     assert initiated_version and len(initiated_version.group(1)) <= 32, (
         "migration version must fit schema_migrations.version VARCHAR(32)"
     )
+    conversation_events_migration = CONVERSATION_EVENTS_MIGRATION.read_text(encoding="utf-8")
+    normalized_conversation_events = " ".join(conversation_events_migration.split())
+    assert "CREATE TABLE IF NOT EXISTS conversation_events" in normalized_conversation_events
+    assert "UNIQUE (conversation_id, seq)" in normalized_conversation_events
+    conversation_events_version = re.search(r"schema_migrations\(version\) VALUES \('([^']+)'\)", conversation_events_migration)
+    assert conversation_events_version and len(conversation_events_version.group(1)) <= 32
 
     text_corpus = "\n".join(p.read_text(encoding="utf-8") for p in [OPENAPI, PROTO, SSE, ERRORS])
     assert "sk-" not in text_corpus, "possible API key entered the contract tree"
     print("contract validation: PASS")
-    print(f"OpenAPI operations: {len(operations)}; RPCs: {len(rpcs)}; SSE events: {len(EXPECTED_EVENTS)}")
+    print(f"OpenAPI operations: {len(operations)}; RPCs: {len(rpcs)}; Run SSE events: {len(EXPECTED_EVENTS)}; Conversation SSE events: {len(EXPECTED_CONVERSATION_EVENTS)}")
     return 0
 
 

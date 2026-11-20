@@ -27,14 +27,16 @@ Json run_json(PgResult& r, int row)
         {"error_code", r.is_null(row, 4) ? Json(nullptr) : Json(r.get(row, 4))},
         {"created_at", r.get(row, 5)},
         {"started_at", r.is_null(row, 6) ? Json(nullptr) : Json(r.get(row, 6))},
-        {"finished_at", r.is_null(row, 7) ? Json(nullptr) : Json(r.get(row, 7))}};
+        {"finished_at", r.is_null(row, 7) ? Json(nullptr) : Json(r.get(row, 7))},
+        {"agent_id", r.get(row, 8)}, {"initiated_by_user_id", r.get(row, 9)}};
 }
 
 const char* kRunColumns =
     "r.id::text, r.conversation_id::text, r.status, r.cancel_requested, r.error_code, "
     "to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'), "
     "CASE WHEN r.started_at IS NULL THEN NULL ELSE to_char(r.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') END, "
-    "CASE WHEN r.finished_at IS NULL THEN NULL ELSE to_char(r.finished_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') END";
+    "CASE WHEN r.finished_at IS NULL THEN NULL ELSE to_char(r.finished_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') END, "
+    "r.agent_id::text, r.initiated_by_user_id::text";
 
 const char* kProjectColumns =
     "p.id::text, p.name, p.description, p.status, p.created_by_user_id::text, "
@@ -146,6 +148,23 @@ void CoreService::require_text(const std::string& value, const std::string& fiel
 bool CoreService::retryable_error(const std::string& code)
 {
     return code == "MODEL_TIMEOUT" || code == "MODEL_PROVIDER_ERROR" || code == "INTERNAL";
+}
+
+void CoreService::appendRunAvailable(PgSession& session, const std::string& conversation_id,
+                                     const std::string& run_id, const std::string& target_agent_id,
+                                     const std::string& initiated_by_user_id, const std::string& status,
+                                     const std::string& request_id)
+{
+    const std::string next_seq = session.query(
+        "SELECT COALESCE(MAX(seq),0)+1 FROM conversation_events WHERE conversation_id=$1",
+        {conversation_id}).get(0, 0);
+    session.query(
+        "INSERT INTO conversation_events(conversation_id,seq,event_type,payload_jsonb,request_id) "
+        "VALUES($1,$2,'run.available',$3::jsonb,$4)",
+        {conversation_id, next_seq,
+         Json{{"run_id", run_id}, {"target_agent_id", target_agent_id},
+              {"initiated_by_user_id", initiated_by_user_id}, {"status", status}}.dump(),
+         request_id});
 }
 
 void CoreService::audit(PgSession& s, const std::string& actor_type, const std::string& actor_id,
@@ -807,6 +826,7 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
                 {run_id, conversation_id, target_agent_id, message_id, provider_id, user_id});
         s.query("UPDATE messages SET run_id=$1 WHERE id=$2", {run_id, message_id});
         s.query("INSERT INTO jobs(id,run_id,status) VALUES($1,$2,'queued')", {job_id, run_id});
+        appendRunAvailable(s, conversation_id, run_id, target_agent_id, user_id, "queued", request_id);
         s.query("UPDATE conversations SET updated_at=now() WHERE id=$1", {conversation_id});
         audit(s, "user", user_id, "message.send", "run", run_id, "success", request_id,
               {{"conversation_id", conversation_id}, {"agent_id", target_agent_id}, {"role", role},
@@ -916,6 +936,7 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
                 {new_run_id, conversation_id, old.get(0, 0), old.get(0, 2), provider_id, user_id});
         s.query("UPDATE messages SET run_id=$1 WHERE id=$2", {new_run_id, old.get(0, 2)});
         s.query("INSERT INTO jobs(id,run_id,status) VALUES($1,$2,'queued')", {job_id, new_run_id});
+        appendRunAvailable(s, conversation_id, new_run_id, old.get(0, 0), user_id, "queued", request_id);
         if (!idempotency_key.empty()) {
             auto claimed = s.query(
                 "INSERT INTO retry_idempotency(user_id,operation,key,run_id,source_run_id) "
@@ -968,14 +989,14 @@ Json CoreService::cancelRun(const std::string& user_id, const std::string& run_i
             {run_id, project_id});
         if (r.rows() != 1)
             throw ServiceError(403, "FORBIDDEN", "run is not accessible");
-        if (role == "editor" && r.get(0, 9) != user_id) {
+        if (role == "editor" && r.get(0, 11) != user_id) {
             auditDenied(user_id, "run.cancel", project_id, request_id, role);
             throw ServiceError(403, "FORBIDDEN", "editors may only cancel their own runs");
         }
         const std::string status = r.get(0, 2);
         if (status == "succeeded" || status == "failed" || status == "cancelled")
             throw ServiceError(409, "RUN_NOT_CANCELLABLE", "run is already terminal");
-        if (r.get(0, 8) == "queued") {
+        if (r.get(0, 10) == "queued") {
             const std::string next_seq = std::to_string(std::stoll(s.query(
                 "SELECT COALESCE(MAX(seq),0)+1 FROM run_events WHERE run_id=$1", {run_id}).get(0, 0)));
             s.query("UPDATE jobs SET status='cancelled',lease_token=NULL,lease_until=NULL,updated_at=now() "
@@ -1045,6 +1066,35 @@ Json CoreService::listRunEvents(const std::string& user_id, const std::string& r
                          {"occurred_at", r.get(row, 4)}, {"payload", payload}});
     }
     return {{"items", items}};
+}
+
+Json CoreService::listConversationEvents(const std::string& user_id, const std::string& conversation_id,
+                                         long long after_seq, const std::string& request_id)
+{
+    require_uuid(conversation_id, "conversation_id");
+    auto s = db_.session();
+    auto conversation = s.query("SELECT project_id::text FROM conversations WHERE id=$1", {conversation_id});
+    if (conversation.rows() != 1)
+        throw ServiceError(403, "FORBIDDEN", "conversation is not accessible");
+    requireProjectRole(s, conversation.get(0, 0), user_id, {"owner", "editor", "viewer"}, false,
+                       "conversation.events", request_id);
+    const std::string tail = s.query(
+        "SELECT COALESCE(MAX(seq),0) FROM conversation_events WHERE conversation_id=$1",
+        {conversation_id}).get(0, 0);
+    auto r = s.query(
+        "SELECT seq::text,event_type,payload_jsonb::text,request_id,"
+        "to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') "
+        "FROM conversation_events WHERE conversation_id=$1 AND seq>$2 "
+        "ORDER BY conversation_events.seq LIMIT 200",
+        {conversation_id, std::to_string(after_seq)});
+    Json items = Json::array();
+    for (int row = 0; row < r.rows(); ++row) {
+        items.push_back({{"schema_version", "1.0"}, {"request_id", r.get(row, 3)},
+                         {"conversation_id", conversation_id}, {"seq", std::stoll(r.get(row, 0))},
+                         {"type", r.get(row, 1)},
+                         {"occurred_at", r.get(row, 4)}, {"payload", Json::parse(r.get(row, 2))}});
+    }
+    return {{"items", items}, {"cursor", std::stoll(tail)}};
 }
 
 Json CoreService::health()

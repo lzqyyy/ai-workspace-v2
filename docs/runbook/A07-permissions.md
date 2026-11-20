@@ -12,7 +12,7 @@
 | 操作 | 目标判定 |
 |---|---|
 | 读取 Project/成员/Agent | 当前用户是 Project member |
-| 读取 Conversation/Message/SSE | 当前用户是 Conversation 所属 Project 的 member |
+| 读取 Conversation/Message、订阅 Conversation 事件或 Run SSE | 当前用户是 Conversation 所属 Project 的 member |
 | 创建 Conversation、发送消息 | member 角色为 `owner` 或 `editor` |
 | 选择目标 Agent | `target_agent_id` 是当前 Project 的 active Project Agent |
 | 添加自己的 Agent | member 角色为 `owner/editor`，且 `agents.owner_id = current_user_id` |
@@ -31,7 +31,7 @@
 ## 4. 实现状态与边界
 
 - 工程包 A 冻结数据模型与 OpenAPI 契约；工程包 B/C 已实现 Project、ProjectMember、ProjectAgent、共享 Conversation、必填 `client_request_id`/`target_agent_id` 发送、显式 Run 发起者及 Conversation/Message/Run/SSE 的 Project 授权。
-- Conversation/Message/Run/SSE 权限统一由 `conversations.project_id -> project_members` 判定；`conversations.owner_id` 仅为创建者字段。viewer 只读，owner/editor 按矩阵写操作。
+- Conversation/Message/Run SSE/Conversation 事件权限统一由 `conversations.project_id -> project_members` 判定；`conversations.owner_id` 仅为创建者字段。viewer 只读，owner/editor 按矩阵写操作。
 - 发送与 retry 在 Project 行锁后锁定 Conversation；成员/Agent 移除同样先锁 Project，避免“移除检查完成后并发创建 Run”的竞态。
 - Project 成员/Agent 关键写操作和权限拒绝写入脱敏审计，只包含资源 ID、角色、动作、结果和 `request_id`。
 - Agent 所有权继续由 `agents.owner_id` 表示，不因加入 Project 转让。

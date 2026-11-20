@@ -102,6 +102,25 @@ def main() -> int:
     assert payload["initiated_by_user_id"] == owner_user["id"]
     assert payload["status"] == "queued"
 
+    # A duplicate send must not add another Conversation event. The next event
+    # read below must therefore belong to the retry Run, not the duplicate send.
+    duplicate = send(owner, conversation_id, owner_agent["id"], "realtime message", request_id)
+    assert duplicate["duplicate"] is True and duplicate["run_id"] == sent["run_id"]
+    cancelled = owner.request("POST", f"/api/v1/runs/{sent['run_id']}/cancel")
+    assert cancelled["status"] == "cancelled", cancelled
+    retried = owner.request(
+        "POST", f"/api/v1/runs/{sent['run_id']}/retry",
+        headers={"Idempotency-Key": f"realtime-retry-{uuid.uuid4()}"},
+    )
+    retry_event = read_conversation_events(editor, conversation_id, after=event["seq"], limit=1, timeout=10)[0]
+    assert retry_event["seq"] == event["seq"] + 1, retry_event
+    retry_payload = retry_event["payload"]
+    assert retry_payload["run_id"] == retried["run_id"], retry_event
+    assert retry_payload["target_agent_id"] == owner_agent["id"], retry_event
+    assert retry_payload["initiated_by_user_id"] == owner_user["id"], retry_event
+    assert retry_payload["status"] == "queued", retry_event
+    owner.request("POST", f"/api/v1/runs/{retried['run_id']}/cancel")
+
     # Explicit cursor replay must return the same persisted event.
     replay = read_conversation_events(editor, conversation_id, after=0, limit=1, timeout=10)
     assert replay and replay[0]["seq"] == event["seq"] and replay[0]["payload"]["run_id"] == sent["run_id"]
@@ -118,8 +137,11 @@ def main() -> int:
         "project_id": project_id,
         "conversation_id": conversation_id,
         "run_id": sent["run_id"],
+        "retry_run_id": retried["run_id"],
         "target_agent_id": payload["target_agent_id"],
         "latency_ms": round(latency * 1000, 1),
+        "retry_event": True,
+        "duplicate_no_event": True,
         "replay": True,
         "viewer_subscribe": True,
         "non_member_denied": True,

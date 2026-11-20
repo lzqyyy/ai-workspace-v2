@@ -44,7 +44,7 @@
 | HOTFIX-20261118 SSE 事件序号与窄屏回归 | CORE/WEB/QA | REVIEW | appendEvent 强制连续序号；跳号/乱序专项 PASS；窄屏侧栏关闭修复；Docker/E2E/Playwright PASS |
 | DOC-20261117 当前事实与交付基线校准 | COORD | REVIEW | 版本/迁移/前端接入/push 状态、归档与幂等边界、UTF-8 长度语义修正；契约与本地验证通过 |
 | IMP-20261119 Run 归属与发送幂等合同 | CORE/COORD | DONE | `client_request_id` 必填、`runs.initiated_by_user_id`、008 迁移、retry/取消权限、OpenAPI 1.0.1；Docker 全量与双浏览器 2H+2A PASS；已合并 `main` |
-| CORE-20261120 Conversation 实时链路 | CORE/WEB/QA | REVIEW | 009 `conversation_events`、Conversation `run.available` SSE/回放、C++ 事务写入、前端真实 target Agent、2.5 秒轮询兜底；专项延迟约 515ms，Docker/浏览器/health PASS |
+| CORE-20261120 Conversation 实时链路 | CORE/WEB/QA | REVIEW | 009 `conversation_events`、Conversation `run.available` SSE/回放、C++ 事务写入、前端真实 target Agent、2.5 秒轮询兜底；专项延迟约 515ms，retry 事件与幂等不重复写入 PASS，Docker/浏览器/health PASS |
 
 ## Gate 结果
 

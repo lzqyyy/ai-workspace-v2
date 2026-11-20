@@ -35,10 +35,14 @@ if ($Docker) {
             python:3.12-slim python tests/shared_conversation.py
         if ($LASTEXITCODE -ne 0) { throw 'Docker shared Conversation E2E failed' }
 
-        & docker run --rm --network $network -v "${root}:/src" -w /src `
-            -e BASE_URL=http://core:8080 `
-            python:3.12-slim python tests/conversation_realtime.py
-        if ($LASTEXITCODE -ne 0) { throw 'Docker Conversation realtime E2E failed' }
+        Invoke-Compose @('stop', 'worker')
+        try {
+            & docker run --rm --network $network -v "${root}:/src" -w /src `
+                -e BASE_URL=http://core:8080 `
+                python:3.12-slim python tests/conversation_realtime.py
+            if ($LASTEXITCODE -ne 0) { throw 'Docker Conversation realtime E2E failed' }
+        }
+        finally { Invoke-Compose @('start', 'worker') }
 
         $fixtureProject = '00000000-0000-4000-8000-000000000301'
         $fixtureConversation = '00000000-0000-4000-8000-000000000401'

@@ -10,7 +10,7 @@
 | Worker 单元 | `go test ./worker/...` | Mock 流式、提示词、取消 |
 | 前端状态 | `node tests/frontend_state_test.js` | 角色控件、Project 路由、target Agent、Retry 防重、刷新恢复、Conversation `run.available`、共享 Run 发现、SSE 游标/去重 |
 | E2E | `./scripts/e2e.ps1` 或 `./scripts/e2e.ps1 -Docker` | 登录、Agent、会话、发送、Run/Conversation SSE、落库、幂等、取消、重试、越权、2H+2A |
-| Conversation 实时专项 | `python tests/conversation_realtime.py` | `run.available` 字段/低延迟、显式回放、viewer 订阅、非成员 403 |
+| Conversation 实时专项 | `python tests/conversation_realtime.py` | `run.available` 字段/低延迟、retry 事件、幂等不重复事件、显式回放、viewer 订阅、非成员 403 |
 | 浏览器 E2E | `./scripts/frontend-e2e.ps1` | 真实 Edge/Chrome 登录、Project-first 单用户发送与流式完成 |
 | 2H+2A 浏览器 E2E | `./scripts/frontend-2h2a-e2e.ps1` | 双浏览器上下文、双人类、双 Agent、共享历史、双方 Conversation/Run SSE、真实目标 Agent、viewer 只读 |
 | 迁移重放 | `./scripts/test-migrations.ps1 -Docker` | project_id NOT NULL、007 唯一迁移行、Core 重启重新执行迁移 |

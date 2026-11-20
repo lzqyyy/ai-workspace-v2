@@ -77,7 +77,7 @@
   - Worker test/vet、前端语法/状态测试：PASS。
   - 单用户 E2E：PASS。
   - shared 2H+2A API E2E：PASS。
-  - Conversation realtime E2E：PASS；`run.available` 实测延迟 514.5ms，回放/viewer/非成员授权通过。
+  - Conversation realtime E2E：PASS；`run.available` 实测延迟约 515ms；duplicate send 不增事件、retry 新 Run 写入下一条事件；回放/viewer/非成员授权通过。
   - Project API fixture、迁移重放：PASS；migrations=9、`conversation_events` 表存在、009 唯一。
 - `frontend-e2e.ps1`：PASS；单浏览器 Project-first 链路完成。
 - `frontend-2h2a-e2e.ps1`：PASS；双浏览器均观察到 Conversation SSE、双方 Run SSE、正确 Agent 身份和 viewer 只读。
@@ -89,6 +89,7 @@
 - Project member 新 Run 实时发现：PASS。
 - `run.available` 字段完整且目标 Agent 真实：PASS。
 - Conversation 事件回放：PASS。
+- Retry 事件写入与幂等重复不重复事件：PASS。
 - viewer 可订阅、非成员 403：PASS。
 - 2.5 秒轮询兜底仍存在：PASS。
 - Run SSE envelope、单 active Run、幂等与 Run 状态机兼容：PASS。

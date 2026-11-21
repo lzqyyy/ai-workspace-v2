@@ -133,6 +133,15 @@ bool project_role_allows(std::string_view role, std::string_view action)
     return (mask & role_bit) != 0;
 }
 
+bool project_action_changes_state(std::string_view action)
+{
+    return action == "project.member.add" || action == "project.member.role_change" ||
+           action == "project.member.remove" || action == "project.agent.add" ||
+           action == "project.agent.remove" || action == "project.archive" ||
+           action == "conversation.create" || action == "message.send" ||
+           action == "run.retry" || action == "run.cancel" || action == "agent.use";
+}
+
 void require_active_project(PgSession& session, const std::string& project_id)
 {
     auto project = session.query("SELECT status FROM projects WHERE id=$1", {project_id});
@@ -783,6 +792,7 @@ Json CoreService::createConversation(const std::string& user_id, const Json& bod
     s.begin();
     try {
         const std::string project_id = ensure_legacy_project(s, user_id, agent_id);
+        require_active_project(s, project_id);
         s.query(
             "INSERT INTO conversations(id,owner_id,agent_id,project_id,title) VALUES($1,$2,$3,$4,$5)",
             {id, user_id, agent_id, project_id, title});
@@ -1492,20 +1502,24 @@ std::pair<bool, std::string> CoreService::checkPermission(const std::string& act
     PgResult r;
     if (resource_type == "AGENT") {
         r = s.query(
-            "SELECT pm.role FROM project_agents pa "
+            "SELECT pm.role,p.status FROM project_agents pa "
             "JOIN agents a ON a.id=pa.agent_id AND a.status='active' "
+            "JOIN projects p ON p.id=pa.project_id "
             "JOIN project_members owner_pm ON owner_pm.project_id=pa.project_id AND owner_pm.user_id=a.owner_id "
             "JOIN project_members pm ON pm.project_id=pa.project_id AND pm.user_id=$3 "
             "WHERE pa.project_id=$1 AND pa.agent_id=$2 LIMIT 1",
             {project_id, resource_id, actor_user_id});
     } else if (resource_type == "CONVERSATION") {
         r = s.query(
-            "SELECT pm.role FROM conversations c JOIN project_members pm ON pm.project_id=c.project_id "
+            "SELECT pm.role,p.status FROM conversations c "
+            "JOIN projects p ON p.id=c.project_id "
+            "JOIN project_members pm ON pm.project_id=c.project_id "
             "WHERE c.project_id=$1 AND c.id=$2 AND pm.user_id=$3",
             {project_id, resource_id, actor_user_id});
     } else if (resource_type == "RUN") {
         r = s.query(
-            "SELECT pm.role FROM runs r JOIN conversations c ON c.id=r.conversation_id "
+            "SELECT pm.role,p.status FROM runs r JOIN conversations c ON c.id=r.conversation_id "
+            "JOIN projects p ON p.id=c.project_id "
             "JOIN project_members pm ON pm.project_id=c.project_id "
             "WHERE c.project_id=$1 AND r.id=$2 AND pm.user_id=$3",
             {project_id, resource_id, actor_user_id});
@@ -1515,6 +1529,8 @@ std::pair<bool, std::string> CoreService::checkPermission(const std::string& act
     if (r.rows() != 1) return {false, "not a project member or resource is outside this project"};
     const std::string role = r.get(0, 0);
     if (!project_role_allows(role, action)) return {false, "project role does not permit this action"};
+    if (project_action_changes_state(action) && r.get(0, 1) != "active")
+        return {false, "project is archived"};
     return {true, role};
 }
 

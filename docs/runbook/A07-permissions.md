@@ -37,5 +37,6 @@
 - Agent 所有权继续由 `agents.owner_id` 表示，不因加入 Project 转让。
 - 前端权限状态仅用于交互，任何权限判断都不以前端缓存为依据。
 - Project 归档已按 Q4-B 实现为 `POST /api/v1/projects/{project_id}/archive`：owner-only、active Run 时 409、成功后软关闭并保持历史只读；本版没有取消归档。
-- 归档后读取 Project/成员/Agent/Conversation/Message/Run/SSE 仍按成员权限工作；新建 Conversation、发送消息、添加/移除 Agent、添加/移除/修改成员、发起/重试 Run 返回 409。
+- 归档后读取 Project/成员/Agent/Conversation/Message/Run/SSE 仍按成员权限工作；新建 Conversation（含 legacy `/api/v1/conversations` 兼容路径）、发送消息、添加/移除 Agent、添加/移除/修改成员、发起/重试 Run 返回 409。
+- `PermissionService.CheckPermission` 对 archived Project 的读 actions 保持允许，状态变更 actions 返回 denied；不只看 membership/role。
 - 生产必须在 HTTPS 反向代理后运行。

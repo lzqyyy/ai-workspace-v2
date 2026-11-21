@@ -289,6 +289,23 @@ def main() -> int:
     for item in archive_audit["items"]:
         assert not (sensitive_keys & {key.lower() for key in item.get("metadata", {})}), item
 
+    legacy_conversation = member.request(
+        "POST",
+        "/api/v1/conversations",
+        {"agent_id": member_agent["id"], "title": "Legacy archive fixture"},
+    )
+    legacy_project_id = legacy_conversation["project_id"]
+    archived_legacy = member.request("POST", f"/api/v1/projects/{legacy_project_id}/archive")
+    assert archived_legacy["status"] == "archived", archived_legacy
+    expect_error(
+        member,
+        "POST",
+        "/api/v1/conversations",
+        409,
+        "CONFLICT",
+        {"agent_id": member_agent["id"], "title": "Legacy archive blocked"},
+    )
+
     report = {
         "status": "PASS",
         "project_id": project_id,
@@ -301,6 +318,7 @@ def main() -> int:
         "archived_readonly": True,
         "archive_audit": True,
         "audit_owner_only": True,
+        "legacy_archived_conversation_guard": True,
         "non_member_denied": True,
         "viewer_write_denied": True,
         "owner_manage_members": True,

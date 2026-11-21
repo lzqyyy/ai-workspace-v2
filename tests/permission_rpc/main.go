@@ -26,7 +26,7 @@ func main() {
     }
     values := map[string]string{
         "owner": "", "editor": "", "agent": "",
-        "editor_project": "", "viewer_project": "", "agentless_project": "",
+        "editor_project": "", "viewer_project": "", "agentless_project": "", "archived_project": "",
     }
     for name := range values {
         key := "PERMISSION_" + upper(name)
@@ -48,6 +48,8 @@ func main() {
         {"viewer read", values["editor"], values["viewer_project"], "agent.read", true},
         {"viewer cannot use", values["editor"], values["viewer_project"], "agent.use", false},
         {"agent outside project", values["editor"], values["agentless_project"], "agent.read", false},
+        {"archived read", values["owner"], values["archived_project"], "agent.read", true},
+        {"archived cannot use", values["owner"], values["archived_project"], "agent.use", false},
         {"unknown action denied", values["owner"], values["editor_project"], "admin.everything", false},
     }
     for _, tc := range cases {
@@ -68,7 +70,7 @@ func main() {
             panic(fmt.Sprintf("%s: allowed=%v want=%v reason=%s", tc.name, response.Allowed, tc.allowed, response.Reason))
         }
     }
-    fmt.Println(`{"status":"PASS","action_aware":true,"agent_project_context":true}`)
+    fmt.Println(`{"status":"PASS","action_aware":true,"agent_project_context":true,"archived_state_enforced":true}`)
 }
 
 func upper(value string) string {

@@ -46,7 +46,7 @@
 | IMP-20261119 Run 归属与发送幂等合同 | CORE/COORD | DONE | `client_request_id` 必填、`runs.initiated_by_user_id`、008 迁移、retry/取消权限、OpenAPI 1.0.1；Docker 全量与双浏览器 2H+2A PASS；已合并 `main` |
 | CORE-20261120 Conversation 实时链路 | CORE/WEB/QA | REVIEW | 009 `conversation_events`、Conversation `run.available` SSE/回放、C++ 事务写入、前端真实 target Agent、2.5 秒轮询兜底；专项延迟约 515ms，retry 事件与幂等不重复写入 PASS，Docker/浏览器/health PASS |
 | CORE-20261120 PostgreSQL 连接池 | CORE/QA | REVIEW | 默认 8 连接、5s 获取超时、5s TCP 建连超时、30s 空闲验证、RAII 归还；256 请求/32 并发、PostgreSQL 重启恢复与 connect_timeout PASS |
-| PERM-20261121 Project 权限加固、审计读取与归档 | CORE/WEB/QA | REVIEW | 集中式 role × action、CheckPermission 显式 Project 上下文、成员移除 Agent 映射清理、owner-only 脱敏审计 API/UI、Q4-B 单向软归档；Docker 全量/API/权限 RPC/浏览器/health PASS |
+| PERM-20261121 Project 权限加固、审计读取与归档 | CORE/WEB/QA | REVIEW | 集中式 role × action、CheckPermission 显式 Project 上下文与 archived 状态、成员移除 Agent 映射清理、owner-only 脱敏审计 API/UI、Q4-B 单向软归档、legacy 归档建会话 409；Docker 全量/API/权限 RPC/浏览器/health PASS |
 
 ## Gate 结果
 

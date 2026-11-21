@@ -18,6 +18,8 @@
 - 新增 `GET /api/v1/projects/{project_id}/audit-events`：owner-only，按 Project 过滤，metadata 仅返回白名单字段。
 - 新增 `POST /api/v1/projects/{project_id}/archive`：owner-only 单向软关闭；active Run 409；归档后读取保留、写操作 409；重复归档返回当前 Project；无取消归档。
 - 前端 Project 设置增加 owner-only 审计列表和归档入口；归档后进入只读 UI，viewer/editor 不显示敏感入口。
+- Legacy `/api/v1/conversations` 兼容路径在 `ensure_legacy_project` 后执行 active Project guard；归档 legacy Project 后返回 409。
+- `CheckPermission` 增加 Project 状态判断：归档 Project 的读 actions 继续允许，`agent.use`、发送、创建、重试、取消等状态变更 actions 返回 deny。
 - 未新增数据库迁移；复用 `projects.status` 与 `audit_events`。
 
 ## 修改文件
@@ -51,7 +53,7 @@ git diff --check
 ```
 
 - Docker Core/Worker build：PASS。
-- `test.ps1 -Docker`：PASS。契约 28 operations / 6 RPC；Go test/vet；frontend syntax/state；单用户 E2E；shared Conversation；Conversation realtime；Project API；permission RPC；pool；migration replay；全部 PASS。
+- `test.ps1 -Docker`：PASS。契约 28 operations / 6 RPC；Go test/vet；frontend syntax/state；单用户 E2E；shared Conversation；Conversation realtime；Project API（含 legacy 归档后建会话 409）；permission RPC（含 archived `agent.read` allow / `agent.use` deny）；pool；migration replay；全部 PASS。
 - Worker `go test`：PASS；generated protobuf compiles with `project_id`。
 - `frontend-e2e.ps1`：PASS（owner Project-first 对话）。
 - `frontend-2h2a-e2e.ps1`：PASS（双浏览器共享历史/SSE、owner 审计/归档入口、editor/viewer 隐藏敏感入口）。
@@ -64,6 +66,8 @@ git diff --check
 - 同一 Agent 按 action 区分读取/写入（`agent.read` vs `agent.use`）：PASS。
 - Agent 必须在请求 Project 中：PASS（permission RPC fixture）。
 - 成员移除后 Agent 映射清理、历史消息保留：PASS。
+- Legacy 兼容创建路径在归档 Project 上返回 409：PASS。
+- Permission RPC 在归档 Project 上读允许、状态变更拒绝：PASS。
 - owner 归档、editor/viewer/非成员 403、active Run 409：PASS。
 - 归档后读取仍可用、Conversation/Message/成员/Agent 写入 409：PASS。
 - `project.archive` 审计存在且 metadata 不含敏感字段：PASS。

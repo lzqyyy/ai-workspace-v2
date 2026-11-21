@@ -182,6 +182,27 @@ void Api::registerRoutes()
         });
     }, {Get});
 
+    app.registerHandler("/api/v1/projects/{1}/archive", [this](const HttpRequestPtr& req,
+                                                                std::function<void(const HttpResponsePtr&)>&& cb,
+                                                                const std::string& projectId) {
+        run_json(req, cb, true, [this, req, projectId](const AuthSession& s, const std::string& rid) {
+            enforce_origin(req); return service_.archiveProject(s.user_id, projectId, rid);
+        });
+    }, {Post});
+
+    app.registerHandler("/api/v1/projects/{1}/audit-events", [this](const HttpRequestPtr& req,
+                                                                   std::function<void(const HttpResponsePtr&)>&& cb,
+                                                                   const std::string& projectId) {
+        run_json(req, cb, true, [this, req, projectId](const AuthSession& s, const std::string& rid) {
+            int limit = 50;
+            if (!req->getParameter("limit").empty()) {
+                try { limit = std::stoi(req->getParameter("limit")); }
+                catch (...) { throw ServiceError(400, "VALIDATION_FAILED", "limit must be an integer"); }
+            }
+            return service_.listProjectAuditEvents(s.user_id, projectId, limit, rid);
+        });
+    }, {Get});
+
     app.registerHandler("/api/v1/projects/{1}/members", [this](const HttpRequestPtr& req,
                                                                std::function<void(const HttpResponsePtr&)>&& cb,
                                                                const std::string& projectId) {

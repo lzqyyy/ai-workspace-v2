@@ -27,7 +27,8 @@
 - `request_id` 必须原样进入审计事件和错误响应。缺少请求 ID 的 API 调用按 `VALIDATION_FAILED` 处理。
 - 重试必须创建新的 `run_id`；同一发送者的重复消息通过 `(conversation_id, sender_id, client_request_id)` 幂等返回原 `run_id`。
 - 非 Project 成员访问 Project 下任何资源统一返回 403，且不泄露资源是否存在。
-- `target_agent_id` 缺失或格式错误返回 `VALIDATION_FAILED`；目标 Agent 不属于当前 Project 或发送者无 Project 写权限返回 `FORBIDDEN`。- Project 归档的 409 语义来自最小 MVP PRD；当前冻结 OpenAPI 没有归档操作，因此该场景暂不能通过 REST 触发，补齐需单独的版本化契约变更。
+- `target_agent_id` 缺失或格式错误返回 `VALIDATION_FAILED`；目标 Agent 不属于当前 Project 或发送者无 Project 写权限返回 `FORBIDDEN`。
+- Project 归档在有 queued/running Run 时返回 `CONFLICT`；归档后的写操作返回 `CONFLICT`。
 
 - Retry 使用 `Idempotency-Key`：同一用户重复使用同一 key 返回第一次创建的 retry `run_id`；不同 key 创建新的 Run。
 - 失败重试不得自动无限循环；Job 默认 `max_attempts=3`，仅可重试错误自动回收。

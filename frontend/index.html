@@ -135,7 +135,7 @@
     <div class="dialog-content">
       <div class="dialog-head">
         <div><p class="eyebrow">PROJECT ACCESS</p><h2 id="settings-project-name">Project 详情</h2><p class="muted">成员列表、角色与可用 Agent 均由服务端返回。</p></div>
-        <button class="icon-button" type="button" data-close-dialog="project-settings-dialog" aria-label="关闭">×</button>
+        <div class="dialog-head-actions"><button id="archive-project" class="button ghost small hidden" type="button">归档 Project</button><button class="icon-button" type="button" data-close-dialog="project-settings-dialog" aria-label="关闭">×</button></div>
       </div>
 
       <section class="settings-section">
@@ -155,6 +155,11 @@
           <label>我的 Agent<select id="owned-agent-select"></select></label>
           <button id="add-owned-agent" class="button primary" type="button">加入 Project</button>
         </div>
+      </section>
+
+      <section id="audit-section" class="settings-section hidden">
+        <div class="section-head"><div><h3>审计记录</h3><p>仅 owner 可见；字段已脱敏，不包含消息正文或凭据。</p></div><button id="refresh-audit" class="button ghost small" type="button">刷新</button></div>
+        <div id="audit-events" class="settings-list"></div>
       </section>
       <p id="settings-error" class="form-error" role="alert"></p>
     </div>

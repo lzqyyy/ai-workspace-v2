@@ -33,6 +33,8 @@ EXPECTED_PATHS = {
     ("/api/v1/projects", "post"),
     ("/api/v1/projects", "get"),
     ("/api/v1/projects/{project_id}", "get"),
+    ("/api/v1/projects/{project_id}/archive", "post"),
+    ("/api/v1/projects/{project_id}/audit-events", "get"),
     ("/api/v1/projects/{project_id}/members", "post"),
     ("/api/v1/projects/{project_id}/members", "get"),
     ("/api/v1/projects/{project_id}/members/{user_id}", "patch"),
@@ -64,7 +66,7 @@ EXPECTED_CONVERSATION_EVENTS = {"run.available"}
 def main() -> int:
     api = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
     assert api["openapi"] == "3.1.0"
-    assert api["info"]["version"] == "1.1.0"
+    assert api["info"]["version"] == "1.2.0"
 
     operations = {
         (path, method)
@@ -89,11 +91,14 @@ def main() -> int:
         "Project",
         "ProjectMember",
         "ProjectAgent",
+        "AuditEvent",
         "ConversationEvent",
         "ConversationRunAvailablePayload",
     ):
         assert name in schemas, f"missing schema: {name}"
     assert schemas["ProjectRole"]["enum"] == ["owner", "editor", "viewer"], "Project role enum mismatch"
+    assert "archiveProject" in {op.get("operationId") for op in api["paths"]["/api/v1/projects/{project_id}/archive"].values() if isinstance(op, dict)}, "archive operation missing"
+    assert "/api/v1/projects/{project_id}/unarchive" not in api["paths"], "unarchive must remain out of scope"
     conversation_schema = schemas["Conversation"]
     assert "project_id" in conversation_schema.get("required", []), "Conversation.project_id must be required"
     assert conversation_schema["properties"]["project_id"]["type"] == "string", (
@@ -152,6 +157,8 @@ def main() -> int:
     assert rpcs == EXPECTED_RPCS, f"RPC mismatch: {sorted(rpcs)}"
     for field in ("request_id", "run_id", "job_id", "lease_token", "event_seq", "status", "error_code"):
         assert re.search(rf"\b{field}\b", proto), f"missing proto field: {field}"
+    permission_request = proto.split("message CheckPermissionRequest", 1)[1].split("}", 1)[0]
+    assert re.search(r"\bproject_id\s*=\s*6\s*;", permission_request), "CheckPermissionRequest.project_id is required"
 
     sse = SSE.read_text(encoding="utf-8")
     for event in EXPECTED_EVENTS:

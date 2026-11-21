@@ -97,10 +97,49 @@ Json conversation_json(PgResult& r, int row)
             {"status", r.get(row, 6)}, {"created_at", r.get(row, 7)}, {"updated_at", r.get(row, 8)}};
 }
 
+Json audit_event_json(PgResult& r, int row)
+{
+    return {{"id", r.get(row, 0)}, {"actor_type", r.get(row, 1)},
+            {"actor_id", r.get(row, 2).empty() ? Json(nullptr) : Json(r.get(row, 2))},
+            {"action", r.get(row, 3)}, {"resource_type", r.get(row, 4)},
+            {"resource_id", r.get(row, 5).empty() ? Json(nullptr) : Json(r.get(row, 5))},
+            {"result", r.get(row, 6)}, {"request_id", r.get(row, 7)},
+            {"metadata", Json::parse(r.get(row, 8))}, {"created_at", r.get(row, 9)}};
+}
+
 void require_project_role_value(const std::string& role)
 {
     if (role != "owner" && role != "editor" && role != "viewer")
         throw ServiceError(400, "VALIDATION_FAILED", "role must be owner, editor, or viewer");
+}
+
+bool project_role_allows(std::string_view role, std::string_view action)
+{
+    unsigned mask = 0;
+    if (action == "project.read" || action == "project.member.list" || action == "project.agent.list" ||
+        action == "conversation.list" || action == "conversation.read" || action == "conversation.events" ||
+        action == "message.list" || action == "run.read" || action == "run.events" || action == "agent.read") {
+        mask = 0b111;
+    } else if (action == "project.member.add" || action == "project.member.role_change" ||
+               action == "project.member.remove" || action == "project.archive" ||
+               action == "project.audit.read" || action == "audit.read") {
+        mask = 0b001;
+    } else if (action == "project.agent.add" || action == "project.agent.remove" ||
+               action == "conversation.create" || action == "message.send" ||
+               action == "run.retry" || action == "run.cancel" || action == "agent.use") {
+        mask = 0b011;
+    }
+    const unsigned role_bit = role == "owner" ? 0b001 : role == "editor" ? 0b010 : role == "viewer" ? 0b100 : 0;
+    return (mask & role_bit) != 0;
+}
+
+void require_active_project(PgSession& session, const std::string& project_id)
+{
+    auto project = session.query("SELECT status FROM projects WHERE id=$1", {project_id});
+    if (project.rows() != 1)
+        throw ServiceError(404, "NOT_FOUND", "project not found");
+    if (project.get(0, 0) != "active")
+        throw ServiceError(409, "CONFLICT", "project is archived");
 }
 
 std::string ensure_legacy_project(PgSession& s, const std::string& user_id, const std::string& agent_id)
@@ -192,8 +231,7 @@ void CoreService::auditDenied(const std::string& user_id, const std::string& att
 }
 
 std::string CoreService::requireProjectRole(PgSession& session, const std::string& project_id,
-                                            const std::string& user_id,
-                                            std::initializer_list<std::string_view> allowed, bool lock_project,
+                                            const std::string& user_id, bool lock_project,
                                             const std::string& attempted_action, const std::string& request_id)
 {
     auto r = lock_project
@@ -208,10 +246,7 @@ std::string CoreService::requireProjectRole(PgSession& session, const std::strin
         throw ServiceError(403, "FORBIDDEN", "project is not accessible");
     }
     const std::string role = r.get(0, 0);
-    const bool permitted = std::any_of(allowed.begin(), allowed.end(), [&](std::string_view candidate) {
-        return candidate == role;
-    });
-    if (!permitted) {
+    if (!project_role_allows(role, attempted_action)) {
         auditDenied(user_id, attempted_action, project_id, request_id, role);
         throw ServiceError(403, "FORBIDDEN", "project role does not permit this action");
     }
@@ -393,10 +428,45 @@ Json CoreService::getProject(const std::string& user_id, const std::string& proj
 {
     require_uuid(project_id, "project_id");
     auto s = db_.session();
-    requireProjectRole(s, project_id, user_id, {"owner", "editor", "viewer"}, false, "project.read", request_id);
+    requireProjectRole(s, project_id, user_id, false, "project.read", request_id);
     auto r = s.query(std::string("SELECT ") + kProjectColumns + " FROM projects p WHERE p.id=$1", {project_id});
     if (r.rows() != 1) throw ServiceError(404, "NOT_FOUND", "project not found");
     return project_json(r, 0);
+}
+
+Json CoreService::archiveProject(const std::string& user_id, const std::string& project_id,
+                            const std::string& request_id)
+{
+    require_uuid(project_id, "project_id");
+    auto s = db_.session();
+    s.begin();
+    try {
+        requireProjectRole(s, project_id, user_id, true, "project.archive", request_id);
+        auto status = s.query("SELECT status FROM projects WHERE id=$1", {project_id});
+        if (status.rows() != 1)
+            throw ServiceError(404, "NOT_FOUND", "project not found");
+        if (status.get(0, 0) == "archived") {
+            auto project = s.query(std::string("SELECT ") + kProjectColumns + " FROM projects p WHERE p.id=$1",
+                                   {project_id});
+            s.commit();
+            return project_json(project, 0);
+        }
+        auto active = s.query(
+            "SELECT 1 FROM runs r JOIN conversations c ON c.id=r.conversation_id "
+            "WHERE c.project_id=$1 AND r.status IN ('queued','running') LIMIT 1",
+            {project_id});
+        if (active.rows() == 1)
+            throw ServiceError(409, "CONFLICT", "project has an active run");
+        s.query("UPDATE projects SET status='archived',updated_at=now() WHERE id=$1", {project_id});
+        audit(s, "user", user_id, "project.archive", "project", project_id, "success", request_id);
+        auto project = s.query(std::string("SELECT ") + kProjectColumns + " FROM projects p WHERE p.id=$1",
+                               {project_id});
+        s.commit();
+        return project_json(project, 0);
+    } catch (...) {
+        s.rollback();
+        throw;
+    }
 }
 
 Json CoreService::listProjectMembers(const std::string& user_id, const std::string& project_id,
@@ -404,7 +474,7 @@ Json CoreService::listProjectMembers(const std::string& user_id, const std::stri
 {
     require_uuid(project_id, "project_id");
     auto s = db_.session();
-    requireProjectRole(s, project_id, user_id, {"owner", "editor", "viewer"}, false,
+    requireProjectRole(s, project_id, user_id, false,
                        "project.member.list", request_id);
     auto r = s.query(
         std::string("SELECT ") + kProjectMemberColumns +
@@ -414,6 +484,40 @@ Json CoreService::listProjectMembers(const std::string& user_id, const std::stri
         {project_id});
     Json items = Json::array();
     for (int row = 0; row < r.rows(); ++row) items.push_back(project_member_json(r, row));
+    return {{"items", items}};
+}
+
+Json CoreService::listProjectAuditEvents(const std::string& user_id, const std::string& project_id, int limit,
+                                         const std::string& request_id)
+{
+    require_uuid(project_id, "project_id");
+    if (limit < 1 || limit > 100)
+        throw ServiceError(400, "VALIDATION_FAILED", "limit must be between 1 and 100");
+    auto s = db_.session();
+    requireProjectRole(s, project_id, user_id, false, "audit.read", request_id);
+    auto r = s.query(
+        "SELECT ae.id::text,ae.actor_type,COALESCE(ae.actor_id,''),ae.action,ae.resource_type, "
+        "COALESCE(ae.resource_id,''),ae.result,ae.request_id, "
+        "jsonb_strip_nulls(jsonb_build_object("
+        "'attempted_action',ae.metadata_jsonb->'attempted_action',"
+        "'role',ae.metadata_jsonb->'role',"
+        "'agent_id',ae.metadata_jsonb->'agent_id',"
+        "'member_user_id',ae.metadata_jsonb->'member_user_id',"
+        "'conversation_id',ae.metadata_jsonb->'conversation_id',"
+        "'source_run_id',ae.metadata_jsonb->'source_run_id',"
+        "'initiated_by_user_id',ae.metadata_jsonb->'initiated_by_user_id',"
+        "'removed_agent_count',ae.metadata_jsonb->'removed_agent_count'))::text, "
+        "to_char(ae.created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') "
+        "FROM audit_events ae WHERE "
+        "(ae.resource_type='project' AND ae.resource_id=$1::text) OR "
+        "(ae.resource_type='conversation' AND EXISTS (SELECT 1 FROM conversations c "
+        "WHERE c.id::text=ae.resource_id AND c.project_id=$1::uuid)) OR "
+        "(ae.resource_type='run' AND EXISTS (SELECT 1 FROM runs r JOIN conversations c ON c.id=r.conversation_id "
+        "WHERE r.id::text=ae.resource_id AND c.project_id=$1::uuid)) "
+        "ORDER BY ae.created_at DESC,ae.id DESC LIMIT $2::int",
+        {project_id, std::to_string(limit)});
+    Json items = Json::array();
+    for (int row = 0; row < r.rows(); ++row) items.push_back(audit_event_json(r, row));
     return {{"items", items}};
 }
 
@@ -430,7 +534,8 @@ Json CoreService::addProjectMember(const std::string& user_id, const std::string
     auto s = db_.session();
     s.begin();
     try {
-        requireProjectRole(s, project_id, user_id, {"owner"}, true, "project.member.add", request_id);
+        requireProjectRole(s, project_id, user_id, true, "project.member.add", request_id);
+        require_active_project(s, project_id);
         auto target = s.query("SELECT id::text FROM users WHERE id=$1 AND status='active'", {target_user_id});
         if (target.rows() != 1) throw ServiceError(404, "NOT_FOUND", "user not found");
         auto inserted = s.query(
@@ -465,7 +570,8 @@ Json CoreService::updateProjectMember(const std::string& user_id, const std::str
     auto s = db_.session();
     s.begin();
     try {
-        requireProjectRole(s, project_id, user_id, {"owner"}, true, "project.member.role_change", request_id);
+        requireProjectRole(s, project_id, user_id, true, "project.member.role_change", request_id);
+        require_active_project(s, project_id);
         auto target = s.query(
             "SELECT pm.role,u.username,u.display_name FROM project_members pm JOIN users u ON u.id=pm.user_id "
             "WHERE pm.project_id=$1 AND pm.user_id=$2 FOR UPDATE OF pm",
@@ -502,7 +608,8 @@ void CoreService::removeProjectMember(const std::string& user_id, const std::str
     auto s = db_.session();
     s.begin();
     try {
-        requireProjectRole(s, project_id, user_id, {"owner"}, true, "project.member.remove", request_id);
+        requireProjectRole(s, project_id, user_id, true, "project.member.remove", request_id);
+        require_active_project(s, project_id);
         auto target = s.query(
             "SELECT pm.role FROM project_members pm WHERE pm.project_id=$1 AND pm.user_id=$2 FOR UPDATE OF pm",
             {project_id, target_user_id});
@@ -521,9 +628,13 @@ void CoreService::removeProjectMember(const std::string& user_id, const std::str
             {project_id, target_user_id});
         if (active.rows() == 1)
             throw ServiceError(409, "CONFLICT", "member has an active run in this project");
+        auto removed_agents = s.query(
+            "DELETE FROM project_agents pa USING agents a "
+            "WHERE pa.project_id=$1 AND pa.agent_id=a.id AND a.owner_id=$2 RETURNING pa.agent_id::text",
+            {project_id, target_user_id});
         s.query("DELETE FROM project_members WHERE project_id=$1 AND user_id=$2", {project_id, target_user_id});
         audit(s, "user", user_id, "project.member.remove", "project", project_id, "success", request_id,
-              {{"member_user_id", target_user_id}});
+              {{"member_user_id", target_user_id}, {"removed_agent_count", removed_agents.rows()}});
         s.commit();
     } catch (...) {
         s.rollback();
@@ -536,7 +647,7 @@ Json CoreService::listProjectAgents(const std::string& user_id, const std::strin
 {
     require_uuid(project_id, "project_id");
     auto s = db_.session();
-    requireProjectRole(s, project_id, user_id, {"owner", "editor", "viewer"}, false,
+    requireProjectRole(s, project_id, user_id, false,
                        "project.agent.list", request_id);
     auto r = s.query(
         std::string("SELECT ") + kProjectAgentColumns +
@@ -560,8 +671,9 @@ Json CoreService::addProjectAgent(const std::string& user_id, const std::string&
     auto s = db_.session();
     s.begin();
     try {
-        const std::string role = requireProjectRole(s, project_id, user_id, {"owner", "editor"}, true,
+        const std::string role = requireProjectRole(s, project_id, user_id, true,
                                                      "project.agent.add", request_id);
+        require_active_project(s, project_id);
         auto agent = s.query("SELECT owner_id::text,status FROM agents WHERE id=$1", {agent_id});
         if (agent.rows() != 1 || agent.get(0, 0) != user_id || agent.get(0, 1) != "active") {
             auditDenied(user_id, "project.agent.add", project_id, request_id, role);
@@ -595,8 +707,9 @@ void CoreService::removeProjectAgent(const std::string& user_id, const std::stri
     auto s = db_.session();
     s.begin();
     try {
-        const std::string role = requireProjectRole(s, project_id, user_id, {"owner", "editor"}, true,
+        const std::string role = requireProjectRole(s, project_id, user_id, true,
                                                      "project.agent.remove", request_id);
+        require_active_project(s, project_id);
         auto agent = s.query(
             "SELECT a.owner_id::text FROM project_agents pa JOIN agents a ON a.id=pa.agent_id "
             "WHERE pa.project_id=$1 AND pa.agent_id=$2 FOR UPDATE OF pa",
@@ -641,7 +754,7 @@ Json CoreService::listProjectConversations(const std::string& user_id, const std
 {
     require_uuid(project_id, "project_id");
     auto s = db_.session();
-    requireProjectRole(s, project_id, user_id, {"owner", "editor", "viewer"}, false,
+    requireProjectRole(s, project_id, user_id, false,
                        "conversation.list", request_id);
     auto r = s.query(
         std::string("SELECT ") + kConversationColumns +
@@ -701,7 +814,7 @@ Json CoreService::createProjectConversation(const std::string& user_id, const st
     auto s = db_.session();
     s.begin();
     try {
-        const std::string role = requireProjectRole(s, project_id, user_id, {"owner", "editor"}, true,
+        const std::string role = requireProjectRole(s, project_id, user_id, true,
                                                      "conversation.create", request_id);
         auto project = s.query("SELECT status FROM projects WHERE id=$1", {project_id});
         if (project.rows() != 1 || project.get(0, 0) != "active")
@@ -733,7 +846,7 @@ Json CoreService::listMessages(const std::string& user_id, const std::string& co
     auto s = db_.session();
     auto conversation = s.query("SELECT project_id::text FROM conversations WHERE id=$1", {conversation_id});
     if (conversation.rows() != 1) throw ServiceError(403, "FORBIDDEN", "conversation is not accessible");
-    requireProjectRole(s, conversation.get(0, 0), user_id, {"owner", "editor", "viewer"}, false,
+    requireProjectRole(s, conversation.get(0, 0), user_id, false,
                        "message.list", request_id);
     auto r = s.query(std::string("SELECT ") + kMessageColumns +
                          " FROM messages m WHERE m.conversation_id=$1 AND m.seq>$2 ORDER BY m.seq",
@@ -778,7 +891,7 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
         const std::string project_id = conversation_project.get(0, 0);
         // ponytail: project row lock serializes conversation writes with member/agent removal;
         // narrow to per-conversation locks if project-level write throughput becomes a problem.
-        const std::string role = requireProjectRole(s, project_id, user_id, {"owner", "editor"}, true,
+        const std::string role = requireProjectRole(s, project_id, user_id, true,
                                                      "message.send", request_id);
         auto project = s.query("SELECT status FROM projects WHERE id=$1", {project_id});
         if (project.rows() != 1 || project.get(0, 0) != "active")
@@ -866,7 +979,7 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
             throw ServiceError(403, "FORBIDDEN", "run is not accessible");
         const std::string project_id = initial.get(0, 0);
         const std::string conversation_id = initial.get(0, 1);
-        const std::string role = requireProjectRole(s, project_id, user_id, {"owner", "editor"}, true,
+        const std::string role = requireProjectRole(s, project_id, user_id, true,
                                                      "run.retry", request_id);
         auto project = s.query("SELECT status FROM projects WHERE id=$1", {project_id});
         if (project.rows() != 1 || project.get(0, 0) != "active")
@@ -981,7 +1094,7 @@ Json CoreService::cancelRun(const std::string& user_id, const std::string& run_i
         if (access.rows() != 1)
             throw ServiceError(403, "FORBIDDEN", "run is not accessible");
         const std::string project_id = access.get(0, 0);
-        const std::string role = requireProjectRole(s, project_id, user_id, {"owner", "editor"}, true,
+        const std::string role = requireProjectRole(s, project_id, user_id, true,
                                                      "run.cancel", request_id);
         auto r = s.query(
             std::string("SELECT ") + kRunColumns +
@@ -1035,7 +1148,7 @@ Json CoreService::getRun(const std::string& user_id, const std::string& run_id,
         {run_id});
     if (access.rows() != 1)
         throw ServiceError(403, "FORBIDDEN", "run is not accessible");
-    requireProjectRole(s, access.get(0, 0), user_id, {"owner", "editor", "viewer"}, false,
+    requireProjectRole(s, access.get(0, 0), user_id, false,
                        "run.read", request_id);
     auto r = s.query(std::string("SELECT ") + kRunColumns + " FROM runs r WHERE r.id=$1", {run_id});
     if (r.rows() != 1)
@@ -1054,7 +1167,7 @@ Json CoreService::listRunEvents(const std::string& user_id, const std::string& r
         {run_id});
     if (access.rows() != 1)
         throw ServiceError(403, "FORBIDDEN", "run is not accessible");
-    requireProjectRole(s, access.get(0, 0), user_id, {"owner", "editor", "viewer"}, false,
+    requireProjectRole(s, access.get(0, 0), user_id, false,
                        "run.events", request_id);
     auto r = s.query(
         "SELECT seq::text,event_type,payload_jsonb::text,request_id,"
@@ -1079,7 +1192,7 @@ Json CoreService::listConversationEvents(const std::string& user_id, const std::
     auto conversation = s.query("SELECT project_id::text FROM conversations WHERE id=$1", {conversation_id});
     if (conversation.rows() != 1)
         throw ServiceError(403, "FORBIDDEN", "conversation is not accessible");
-    requireProjectRole(s, conversation.get(0, 0), user_id, {"owner", "editor", "viewer"}, false,
+    requireProjectRole(s, conversation.get(0, 0), user_id, false,
                        "conversation.events", request_id);
     const std::string tail = s.query(
         "SELECT COALESCE(MAX(seq),0) FROM conversation_events WHERE conversation_id=$1",
@@ -1366,36 +1479,43 @@ Json CoreService::updateJobStatus(const std::string& job_id, const std::string& 
     }
 }
 std::pair<bool, std::string> CoreService::checkPermission(const std::string& actor_user_id,
+                                                          const std::string& project_id,
                                                           const std::string& resource_type,
                                                           const std::string& resource_id,
                                                           const std::string& action)
 {
     require_uuid(actor_user_id, "actor_user_id");
+    require_uuid(project_id, "project_id");
     require_uuid(resource_id, "resource_id");
     if (action.empty()) return {false, "action is required"};
     auto s = db_.session();
     PgResult r;
     if (resource_type == "AGENT") {
         r = s.query(
-            "SELECT pm.role FROM agents a JOIN project_agents pa ON pa.agent_id=a.id "
-            "JOIN project_members pm ON pm.project_id=pa.project_id AND pm.user_id=$2 "
-            "WHERE a.id=$1 ORDER BY CASE pm.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END LIMIT 1",
-            {resource_id, actor_user_id});
+            "SELECT pm.role FROM project_agents pa "
+            "JOIN agents a ON a.id=pa.agent_id AND a.status='active' "
+            "JOIN project_members owner_pm ON owner_pm.project_id=pa.project_id AND owner_pm.user_id=a.owner_id "
+            "JOIN project_members pm ON pm.project_id=pa.project_id AND pm.user_id=$3 "
+            "WHERE pa.project_id=$1 AND pa.agent_id=$2 LIMIT 1",
+            {project_id, resource_id, actor_user_id});
     } else if (resource_type == "CONVERSATION") {
         r = s.query(
             "SELECT pm.role FROM conversations c JOIN project_members pm ON pm.project_id=c.project_id "
-            "WHERE c.id=$1 AND pm.user_id=$2",
-            {resource_id, actor_user_id});
+            "WHERE c.project_id=$1 AND c.id=$2 AND pm.user_id=$3",
+            {project_id, resource_id, actor_user_id});
     } else if (resource_type == "RUN") {
         r = s.query(
             "SELECT pm.role FROM runs r JOIN conversations c ON c.id=r.conversation_id "
             "JOIN project_members pm ON pm.project_id=c.project_id "
-            "WHERE r.id=$1 AND pm.user_id=$2",
-            {resource_id, actor_user_id});
+            "WHERE c.project_id=$1 AND r.id=$2 AND pm.user_id=$3",
+            {project_id, resource_id, actor_user_id});
     } else {
         return {false, "unsupported resource type"};
     }
-    return r.rows() == 1 ? std::pair{true, r.get(0, 0)} : std::pair{false, std::string("not a project member")};
+    if (r.rows() != 1) return {false, "not a project member or resource is outside this project"};
+    const std::string role = r.get(0, 0);
+    if (!project_role_allows(role, action)) return {false, "project role does not permit this action"};
+    return {true, role};
 }
 
 } // namespace ws

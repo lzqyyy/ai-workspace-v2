@@ -11,7 +11,7 @@ Browser -> C++ HTTP/SSE :8080 -> PostgreSQL :5432
 
 ## 已实现
 
-- Project 创建/列表/详情；owner/editor/viewer 角色与成员管理。
+- Project 创建/列表/详情、owner-only 软归档与脱敏审计读取；owner/editor/viewer 角色与成员管理。
 - Agent 所有权和 Project Agent 映射；只有 Agent owner 能加入自己的 Agent。
 - Project-first 共享 Conversation、共享 Message 历史、必填 `target_agent_id`。
 - 同一 Conversation 单 active Run；发送/retry 冲突返回 409。
@@ -106,6 +106,6 @@ Core 通过 `DB_POOL_SIZE`（默认 `8`）、`DB_ACQUIRE_TIMEOUT_MS`（默认 `5
 ## 当前限制
 
 - 未实现 Task/Handoff、文件、共享记忆、插件、诊断、匹配、Agreement、Trial 或多 Run 并行。
-- Project 归档策略已写入最小 MVP PRD，但冻结 OpenAPI 没有归档路由，当前也没有运行时入口；补齐需另行批准版本化契约变更。
+- Project 归档为单向软关闭，归档后历史只读；本版没有取消归档。
 - Conversation SSE 与 Run SSE 均由 C++ 查询 PostgreSQL 事件表推动；当前不引入数据库 LISTEN/NOTIFY 或外部消息总线。
 - 生产部署仍需 HTTPS 反向代理、账号管理、Worker 扩容与备份策略。

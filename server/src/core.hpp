@@ -31,7 +31,10 @@ public:
     Json listProjects(const std::string& user_id, const std::string& request_id);
     Json createProject(const std::string& user_id, const Json& body, const std::string& request_id);
     Json getProject(const std::string& user_id, const std::string& project_id, const std::string& request_id);
+    Json archiveProject(const std::string& user_id, const std::string& project_id, const std::string& request_id);
     Json listProjectMembers(const std::string& user_id, const std::string& project_id, const std::string& request_id);
+    Json listProjectAuditEvents(const std::string& user_id, const std::string& project_id, int limit,
+                                const std::string& request_id);
     Json addProjectMember(const std::string& user_id, const std::string& project_id, const Json& body,
                           const std::string& request_id);
     Json updateProjectMember(const std::string& user_id, const std::string& project_id,
@@ -73,8 +76,9 @@ public:
     Json updateJobStatus(const std::string& job_id, const std::string& run_id, const std::string& lease_token,
                          const std::string& status, const std::string& error_code, const std::string& error_message,
                          const std::string& final_content, const std::string& usage_json, const std::string& request_id);
-    std::pair<bool, std::string> checkPermission(const std::string& actor_user_id, const std::string& resource_type,
-                                                  const std::string& resource_id, const std::string& action);
+    std::pair<bool, std::string> checkPermission(const std::string& actor_user_id, const std::string& project_id,
+                                                  const std::string& resource_type, const std::string& resource_id,
+                                                  const std::string& action);
 
 private:
     void audit(PgSession& session, const std::string& actor_type, const std::string& actor_id,
@@ -84,8 +88,8 @@ private:
     void auditDenied(const std::string& user_id, const std::string& attempted_action, const std::string& project_id,
                      const std::string& request_id, const std::string& role = {});
     std::string requireProjectRole(PgSession& session, const std::string& project_id, const std::string& user_id,
-                                   std::initializer_list<std::string_view> allowed, bool lock_project,
-                                   const std::string& attempted_action, const std::string& request_id);
+                                   bool lock_project, const std::string& attempted_action,
+                                   const std::string& request_id);
     std::string requireProjectAgent(PgSession& session, const std::string& project_id, const std::string& agent_id,
                                     const std::string& user_id, const std::string& attempted_action,
                                     const std::string& request_id);

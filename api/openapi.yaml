@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: AI Workspace V2.0 Core API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Frozen REST contract between the native browser client and the C++ core.
     All API requests are same-origin and authenticated by an HttpOnly session cookie.
     Mutating requests must include `X-Request-ID`; EventSource passes `request_id` as a query parameter.
     Project-first routes are frozen and implemented by the C++ core; the native browser client also uses these routes.
-    Non-members receive 403. The MVP PRD defines Project archive semantics, but no Project archive operation is frozen in this OpenAPI; do not infer a route or method until a versioned contract change adds one.
+    Non-members receive 403. Project archive is a soft close: the explicit archive operation is owner-only, and archived Projects remain readable while all writes return 409. No unarchive operation is defined.
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -139,6 +139,56 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/projects/{project_id}/archive:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      tags: [Projects]
+      operationId: archiveProject
+      summary: Soft-close a Project
+      description: Owner only. Archiving preserves Project, membership, Agent, Conversation, Message, Run and audit history. It returns 409 while any Run is queued or running. Repeating archive on an already archived Project returns the current Project. There is no unarchive operation in this contract.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Project archived or already archived
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/projects/{project_id}/audit-events:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [Projects]
+      operationId: listProjectAuditEvents
+      summary: Read redacted Project audit events
+      description: Owner only. Returns Project-scoped audit events with whitelisted metadata only; message bodies, cookies, Authorization headers and API keys are never returned.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Redacted Project audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEvent' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '500': { $ref: '#/components/responses/InternalError' }
   /api/v1/projects/{project_id}/members:
     parameters:
@@ -681,7 +731,7 @@ components:
       enum: [owner, editor, viewer]
     Project:
       type: object
-      description: Project members can read all Conversations in the Project. The PRD defines owner-only archive semantics, but this contract has no archive operation.
+      description: Project members can read all Conversations in the Project. Owners may soft-close the Project through the explicit archive operation; archived Projects remain readable and reject writes.
       required: [id, name, status, created_by_user_id, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
@@ -704,6 +754,24 @@ components:
         added_by_user_id: { type: [string, 'null'], format: uuid }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    AuditEvent:
+      type: object
+      description: Redacted audit record. Metadata is allowlisted and must never contain message content, cookies, Authorization headers or API keys.
+      required: [id, actor_type, action, resource_type, result, request_id, metadata, created_at]
+      properties:
+        id: { type: string }
+        actor_type: { type: string, enum: [user, worker, system] }
+        actor_id: { type: [string, 'null'] }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: [string, 'null'] }
+        result: { type: string, enum: [allowed, denied, success, failure] }
+        request_id: { type: string }
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Allowlisted operational metadata only.
+        created_at: { type: string, format: date-time }
     ProjectAgent:
       type: object
       description: Project Agent ownership remains on Agent.owner_id; this mapping grants Project use without transfer.

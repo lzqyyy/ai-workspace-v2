@@ -45,6 +45,9 @@ if ($Docker) {
         finally { Invoke-Compose @('start', 'worker') }
 
         $fixtureProject = '00000000-0000-4000-8000-000000000301'
+        $permissionEditorProject = '00000000-0000-4000-8000-000000000302'
+        $permissionViewerProject = '00000000-0000-4000-8000-000000000303'
+        $permissionAgentlessProject = '00000000-0000-4000-8000-000000000304'
         $fixtureConversation = '00000000-0000-4000-8000-000000000401'
         $fixtureMessage = '00000000-0000-4000-8000-000000000501'
         $fixtureRun = '00000000-0000-4000-8000-000000000601'
@@ -54,20 +57,30 @@ BEGIN;
 DELETE FROM runs WHERE conversation_id='$fixtureConversation';
 DELETE FROM messages WHERE conversation_id='$fixtureConversation';
 DELETE FROM conversations WHERE id='$fixtureConversation';
-DELETE FROM project_agents WHERE project_id='$fixtureProject';
-DELETE FROM project_members WHERE project_id='$fixtureProject';
-DELETE FROM projects WHERE id='$fixtureProject';
+DELETE FROM project_agents WHERE project_id IN ('$fixtureProject','$permissionEditorProject','$permissionViewerProject','$permissionAgentlessProject');
+DELETE FROM project_members WHERE project_id IN ('$fixtureProject','$permissionEditorProject','$permissionViewerProject','$permissionAgentlessProject');
+DELETE FROM projects WHERE id IN ('$fixtureProject','$permissionEditorProject','$permissionViewerProject','$permissionAgentlessProject');
 COMMIT;
 "@
         $seedSql = @"
 BEGIN;
 INSERT INTO projects(id,name,description,status,created_by_user_id)
-VALUES ('$fixtureProject','Package B active run fixture','Runtime removal guard fixture','active','00000000-0000-4000-8000-000000000101');
+VALUES ('$fixtureProject','Package B active run fixture','Runtime removal guard fixture','active','00000000-0000-4000-8000-000000000101'),
+('$permissionEditorProject','Permission editor fixture','Action-aware permission fixture','active','00000000-0000-4000-8000-000000000101'),
+('$permissionViewerProject','Permission viewer fixture','Viewer permission fixture','active','00000000-0000-4000-8000-000000000101'),
+('$permissionAgentlessProject','Permission agentless fixture','Agent project context fixture','active','00000000-0000-4000-8000-000000000102');
 INSERT INTO project_members(project_id,user_id,role,added_by_user_id) VALUES
 ('$fixtureProject','00000000-0000-4000-8000-000000000101','owner','00000000-0000-4000-8000-000000000101'),
-('$fixtureProject','00000000-0000-4000-8000-000000000102','editor','00000000-0000-4000-8000-000000000101');
+('$fixtureProject','00000000-0000-4000-8000-000000000102','editor','00000000-0000-4000-8000-000000000101'),
+('$permissionEditorProject','00000000-0000-4000-8000-000000000101','owner','00000000-0000-4000-8000-000000000101'),
+('$permissionEditorProject','00000000-0000-4000-8000-000000000102','editor','00000000-0000-4000-8000-000000000101'),
+('$permissionViewerProject','00000000-0000-4000-8000-000000000101','owner','00000000-0000-4000-8000-000000000101'),
+('$permissionViewerProject','00000000-0000-4000-8000-000000000102','viewer','00000000-0000-4000-8000-000000000101'),
+('$permissionAgentlessProject','00000000-0000-4000-8000-000000000102','editor','00000000-0000-4000-8000-000000000102');
 INSERT INTO project_agents(project_id,agent_id,added_by_user_id)
-VALUES ('$fixtureProject','00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000101');
+VALUES ('$fixtureProject','00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000101'),
+('$permissionEditorProject','00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000101'),
+('$permissionViewerProject','00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000101');
 INSERT INTO conversations(id,owner_id,agent_id,project_id,title,status)
 VALUES ('$fixtureConversation','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000201','$fixtureProject','Package B guard conversation','active');
 INSERT INTO messages(id,conversation_id,sender_type,sender_id,role,content,status)
@@ -94,8 +107,19 @@ COMMIT;
                 python:3.12-slim python tests/project_api.py
             if ($LASTEXITCODE -ne 0) { throw 'Docker Project API E2E failed' }
 
+            & docker run --rm --network $network -v "${root}:/src" -v ai-workspace-v2-go-mod:/go/pkg/mod -w /src `
+                -e GOTOOLCHAIN=local -e GRPC_ADDR=core:50051 `
+                -e PERMISSION_OWNER=00000000-0000-4000-8000-000000000101 `
+                -e PERMISSION_EDITOR=00000000-0000-4000-8000-000000000102 `
+                -e PERMISSION_AGENT=00000000-0000-4000-8000-000000000201 `
+                -e PERMISSION_EDITOR_PROJECT=$permissionEditorProject `
+                -e PERMISSION_VIEWER_PROJECT=$permissionViewerProject `
+                -e PERMISSION_AGENTLESS_PROJECT=$permissionAgentlessProject `
+                golang:1.25-bookworm go run -buildvcs=false ./tests/permission_rpc
+            if ($LASTEXITCODE -ne 0) { throw 'Docker Permission RPC E2E failed' }
+
             $report = Get-Content -LiteralPath (Join-Path $root 'build\project-api-report.json') -Raw | ConvertFrom-Json
-            if ($report.status -ne 'PASS' -or !$report.active_run_removal_guard) { throw 'Project API report did not confirm active-run guards' }
+            if ($report.status -ne 'PASS' -or !$report.active_run_removal_guard -or !$report.archive_owner_only -or !$report.archived_readonly -or !$report.archive_audit) { throw 'Project API report did not confirm permission/archive guards' }
             $auditSql = @'
 DO $$
 BEGIN
@@ -110,6 +134,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM audit_events WHERE action='permission.denied' AND created_at > now()-interval '30 minutes') THEN
         RAISE EXCEPTION 'missing permission.denied audit';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM audit_events WHERE action='project.archive' AND created_at > now()-interval '30 minutes') THEN
+        RAISE EXCEPTION 'missing project.archive audit';
     END IF;
 END $$;
 '@

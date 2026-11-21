@@ -18,7 +18,8 @@ const els = {
   sendButton: $('send-button'), cancelButton: $('cancel-button'), inlineError: $('inline-error'), inlineErrorText: $('inline-error-text'),
   retryButton: $('retry-button'), composerHint: $('composer-hint'), readonlyNote: $('readonly-note'), agentDialog: $('agent-dialog'),
   agentForm: $('agent-form'), agentName: $('agent-name'), agentPrompt: $('agent-prompt'), agentError: $('agent-error'),
-  agentSubmit: $('agent-submit'), toast: $('toast')
+  agentSubmit: $('agent-submit'), archiveProject: $('archive-project'), auditSection: $('audit-section'),
+  auditEvents: $('audit-events'), refreshAudit: $('refresh-audit'), toast: $('toast')
 };
 
 const state = {
@@ -56,8 +57,9 @@ async function api(path, options = {}) {
   return data;
 }
 
-function canWrite() { return state.role === 'owner' || state.role === 'editor'; }
-function canManage() { return state.role === 'owner'; }
+function projectActive() { return state.project?.status === 'active'; }
+function canWrite() { return projectActive() && (state.role === 'owner' || state.role === 'editor'); }
+function canManage() { return projectActive() && state.role === 'owner'; }
 function canCancelRun(run = state.run) { return canWrite() && Boolean(run) && (state.role === 'owner' || run.ownerId === state.user?.id); }
 function canRetryLast() { return canWrite() && Boolean(state.lastRunId) && (state.role === 'owner' || state.lastRunOwnerId === state.user?.id); }
 function activeRun() { return state.run && state.run.conversationId === state.activeConversation?.id ? state.run : null; }
@@ -76,22 +78,29 @@ function applyPermissions() {
   const hasConversation = Boolean(state.activeConversation);
   const hasAgents = state.projectAgents.length > 0;
   const viewer = hasProject && state.role === 'viewer';
+  const archived = hasProject && !projectActive();
   const locked = Boolean(state.run) || state.sending || state.cancelling;
   els.projectSelect.disabled = state.projects.length === 0;
   els.projectSettings.disabled = !hasProject;
   els.newConversation.disabled = !canWrite() || !hasAgents || locked;
-  els.agentSelect.disabled = !hasProject || !hasAgents;
+  els.agentSelect.disabled = !hasProject || !hasAgents || archived;
   els.messageInput.disabled = !canWrite() || !hasConversation || locked;
   els.sendButton.disabled = !canWrite() || !hasConversation || locked || !state.targetAgentId;
   els.cancelButton.classList.toggle('hidden', !canCancelRun());
   els.cancelButton.disabled = state.cancelling;
   els.retryButton.classList.toggle('hidden', !state.retryVisible);
   els.retryButton.disabled = state.retrying;
-  els.readonlyNote.classList.toggle('hidden', !viewer);
+  els.readonlyNote.classList.toggle('hidden', !viewer && !archived);
+  els.readonlyNote.textContent = archived ? 'Project 已归档，当前为只读历史。' : '当前为 viewer，只读查看共享消息与 SSE 运行状态。';
   els.showMemberForm.classList.toggle('hidden', !canManage());
   els.addAgentControls.classList.toggle('hidden', !canWrite());
-  els.messageInput.placeholder = viewer ? '当前为 viewer，只读查看共享会话' : state.run ? '当前已有运行中的任务' : '输入消息，Enter 发送，Shift + Enter 换行';
-  if (viewer) els.composerHint.textContent = 'viewer 只读 · SSE 实时查看';
+  els.auditSection.classList.toggle('hidden', !hasProject || state.role !== 'owner');
+  els.archiveProject.hidden = !hasProject || state.role !== 'owner';
+  els.archiveProject.disabled = !projectActive();
+  els.archiveProject.textContent = archived ? 'Project 已归档' : '归档 Project';
+  els.messageInput.placeholder = archived ? 'Project 已归档，只读查看历史' : viewer ? '当前为 viewer，只读查看共享会话' : state.run ? '当前已有运行中的任务' : '输入消息，Enter 发送，Shift + Enter 换行';
+  if (archived) els.composerHint.textContent = 'Project 已归档 · 只读历史';
+  else if (viewer) els.composerHint.textContent = 'viewer 只读 · SSE 实时查看';
   else if (state.role) els.composerHint.textContent = `${state.role} · target_agent_id 由 Project Agent 选择器提交`;
 }
 function setSending(busy) { state.sending = Boolean(busy); applyPermissions(); }
@@ -157,7 +166,7 @@ async function selectProject(projectId) {
 
 function renderProjectHeader() {
   els.projectName.textContent = state.project?.name || '未选择 Project';
-  els.projectDescription.textContent = state.project?.description || 'Project 成员共享成员、Agent 与会话';
+  els.projectDescription.textContent = state.project?.status === 'archived' ? 'Project 已归档 · 只读历史' : state.project?.description || 'Project 成员共享成员、Agent 与会话';
   els.roleBadge.textContent = state.role || '非成员'; els.roleBadge.className = `role-badge ${state.role || ''}`.trim();
   els.userRole.textContent = state.role ? `${state.role} · Project 成员` : '未加入 Project';
   els.settingsProjectName.textContent = state.project?.name || 'Project 详情';
@@ -491,7 +500,41 @@ async function createProject(event) {
 }
 function openProjectSettings() {
   if (!state.project) return; els.settingsError.textContent = ''; els.memberForm.classList.add('hidden');
-  renderMembers(); renderProjectAgents(); els.projectSettingsDialog.showModal();
+  renderMembers(); renderProjectAgents();
+  if (state.role === 'owner') loadAuditEvents();
+  els.projectSettingsDialog.showModal();
+}
+async function loadAuditEvents() {
+  if (!state.project || state.role !== 'owner') return;
+  try {
+    const data = await api(`/api/v1/projects/${encodeURIComponent(state.project.id)}/audit-events?limit=20`);
+    renderAuditEvents(data.items || []);
+  } catch (error) { els.settingsError.textContent = error.message; }
+}
+function renderAuditEvents(items) {
+  els.auditEvents.replaceChildren();
+  if (!items.length) {
+    const empty = document.createElement('div'); empty.className = 'settings-row-main'; empty.textContent = '暂无审计记录';
+    els.auditEvents.append(empty); return;
+  }
+  for (const item of items) {
+    const row = document.createElement('div'); row.className = 'settings-row';
+    const main = document.createElement('div'); main.className = 'settings-row-main';
+    const action = document.createElement('strong'); action.textContent = item.action || 'audit';
+    const metadata = Object.entries(item.metadata || {}).map(([key, value]) => `${key}=${value}`).join(' · ');
+    const detail = document.createElement('small'); detail.textContent = `${item.result} · ${item.resource_type} · ${item.created_at}${metadata ? ` · ${metadata}` : ''}`;
+    main.append(action, detail); row.append(main); els.auditEvents.append(row);
+  }
+}
+async function archiveCurrentProject() {
+  if (!state.project || state.role !== 'owner' || !projectActive()) return;
+  if (!window.confirm('归档后 Project 将只读，历史数据会保留。确认归档？')) return;
+  els.settingsError.textContent = '';
+  try {
+    const project = await api(`/api/v1/projects/${encodeURIComponent(state.project.id)}/archive`, {method: 'POST'});
+    state.project = project; state.projects = state.projects.map((item) => item.id === project.id ? project : item);
+    renderProjectHeader(); applyPermissions(); await refreshProjectData(); await loadAuditEvents(); toast('Project 已归档');
+  } catch (error) { els.settingsError.textContent = error.message; }
 }
 async function refreshProjectData() {
   if (!state.project) return; const encoded = encodeURIComponent(state.project.id);
@@ -538,6 +581,7 @@ function bindEvents() {
   els.projectSelect.addEventListener('change', () => selectProject(els.projectSelect.value)); els.projectForm.addEventListener('submit', createProject);
   els.agentForm.addEventListener('submit', createAgent); els.memberForm.addEventListener('submit', addMember);
   els.showMemberForm.addEventListener('click', () => els.memberForm.classList.toggle('hidden')); els.addOwnedAgent.addEventListener('click', addOwnedAgent);
+  els.archiveProject.addEventListener('click', archiveCurrentProject); els.refreshAudit.addEventListener('click', loadAuditEvents);
   els.cancelButton.addEventListener('click', cancelRun); els.retryButton.addEventListener('click', retryRun);
   els.emptyAction.addEventListener('click', () => { if (!state.project) openProjectDialog(); else if (!state.projectAgents.length || !canWrite()) openProjectSettings(); else createConversation(); });
   els.agentSelect.addEventListener('change', () => { state.targetAgentId = els.agentSelect.value; if (state.project) localStorage.setItem(`workspace.targetAgent.${state.project.id}`, state.targetAgentId); applyPermissions(); });

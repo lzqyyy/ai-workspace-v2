@@ -55,7 +55,7 @@ agent_contract:
 - 6 个 gRPC RPC 与 Go Worker。
 - PostgreSQL 持久化、事务、Job 租约、重试、取消和幂等。
 - Mock 流式 Provider 与 OpenAI-compatible Provider 适配器。
-- Project、ProjectMember、ProjectAgent；owner/editor/viewer 权限与审计。
+- Project、ProjectMember、ProjectAgent；owner/editor/viewer 权限与审计；owner-only Project 软归档和脱敏审计读取。
 - Project-first 共享 Conversation、`target_agent_id` 发送、单 active Run 和 Project member Run/SSE 权限。
 - 浏览器刷新后的历史恢复、Run SSE 游标回放、Conversation `run.available` 实时发现和 2.5 秒轮询兜底。
 - Conversation 事件由 `009_conversation_events.sql` 持久化，C++ 在创建/重试 Run 的同一事务写入。
@@ -80,6 +80,8 @@ agent_contract:
 - 非 Project 成员访问 Project 资源统一返回 403；一个 Conversation 同时最多一个 queued/running Run。
 - C++ 连接池默认上限 8、获取超时 5000ms、TCP 建连超时 5s、空闲验证 30s；事务未提交会话归还前会回滚，失效连接不回到池。
 - Conversation 事件与 Run SSE 使用同一 Project membership 授权边界；viewer 可订阅，非成员 403。
+- 集中式 role × action 矩阵同时服务 REST 授权与 gRPC `CheckPermission`；Agent 权限判断显式要求匹配 `project_id`。
+- Project 归档为单向软关闭：owner-only、active Run 时 409、归档后读取保留而写操作 409；成员移除会在同一事务清理其 Project Agent 映射并保留历史。
 - 前端按钮状态只用于交互，服务端始终是唯一授权依据。
 
 ## 3. 架构红线

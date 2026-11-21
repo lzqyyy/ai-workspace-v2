@@ -2,7 +2,7 @@
 
 - 状态：REVIEW
 - 主责 Agent：CORE（含最小 WEB/QA/文档同步）
-- 分支 / 提交：`agent/core/conversation-realtime` / 提交见最终同步结果
+- 分支 / 提交：`agent/core/conversation-realtime` / `79d1bd9`（功能、测试与文档提交；后续仅补充交接同步事实）
 - 开始时间：2026-11-21
 - 完成时间：2026-11-21
 

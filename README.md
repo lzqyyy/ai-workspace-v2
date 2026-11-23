@@ -98,6 +98,7 @@ Docker-first 全量：
 - 部署与运维：`docs/runbook/A03-deployment.md`、`docs/runbook/A14-operations.md`
 - 2H+2A 演示：`docs/runbook/A15-multiplayer-demo.md`
 - 交接记录：`docs/handoffs/`
+- 发布记录：`docs/releases/V0.2.0.md`
 
 ## 运行配置
 

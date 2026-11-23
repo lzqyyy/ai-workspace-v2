@@ -2,7 +2,7 @@
 
 更新时间：2026-11-23
 当前版本：V0.2.0（RELEASE）
-发布状态：已合并 `main` 并推送 `origin`；`v0.2.0` tag 随本次发布创建
+发布状态：已合并 `main` 并推送 `origin`；`v0.2.0` tag 与 GitHub Release 已发布：https://github.com/lzqyyy/ai-workspace-v2/releases/tag/v0.2.0
 
 ## 当前任务
 

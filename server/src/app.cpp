@@ -196,8 +196,12 @@ void Api::registerRoutes()
         run_json(req, cb, true, [this, req, projectId](const AuthSession& s, const std::string& rid) {
             int limit = 50;
             if (!req->getParameter("limit").empty()) {
-                try { limit = std::stoi(req->getParameter("limit")); }
+                const auto raw = req->getParameter("limit");
+                std::size_t consumed = 0;
+                try { limit = std::stoi(raw, &consumed); }
                 catch (...) { throw ServiceError(400, "VALIDATION_FAILED", "limit must be an integer"); }
+                if (consumed != raw.size())
+                    throw ServiceError(400, "VALIDATION_FAILED", "limit must be an integer");
             }
             return service_.listProjectAuditEvents(s.user_id, projectId, limit, rid);
         });

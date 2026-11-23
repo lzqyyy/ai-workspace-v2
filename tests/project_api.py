@@ -81,6 +81,8 @@ def main() -> int:
     expect_error(member, "GET", f"/api/v1/projects/{project_id}", 403, "FORBIDDEN")
     expect_error(member, "GET", f"/api/v1/projects/{project_id}/members", 403, "FORBIDDEN")
     expect_error(member, "GET", f"/api/v1/projects/{project_id}/audit-events", 403, "FORBIDDEN")
+    expect_error(owner, "GET", f"/api/v1/projects/{project_id}/audit-events?limit=1x", 400, "VALIDATION_FAILED")
+    expect_error(owner, "GET", f"/api/v1/projects/{project_id}/audit-events?limit=101", 400, "VALIDATION_FAILED")
     owner_audit = owner.request("GET", f"/api/v1/projects/{project_id}/audit-events")
     assert any(item["action"] == "project.create" for item in owner_audit["items"]), owner_audit
 

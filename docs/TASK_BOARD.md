@@ -1,8 +1,8 @@
 # 基础对话平台任务看板
 
-更新时间：2026-11-21
-当前候选版本：V0.2.0（REVIEW）
-发布状态：已合并 `main` 并推送 `origin`；未创建 `V0.2.0` tag
+更新时间：2026-11-23
+当前候选版本：V0.2.0（RELEASE REVIEW）
+发布状态：V0.2 多人基线已合并 `main`；`agent/core/conversation-realtime` 增量已推送、待合并；未创建 `V0.2.0` tag
 
 ## 当前任务
 

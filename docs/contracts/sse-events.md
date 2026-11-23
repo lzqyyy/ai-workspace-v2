@@ -1,8 +1,8 @@
-# SSE 事件契约 V1.0.0
+# SSE 事件契约 V1.1.0
 
 - 状态：FROZEN
 - 所有者：COORD
-- 传输：浏览器 -> C++ `GET /api/v1/runs/{run_id}/events`
+- 传输：浏览器 -> C++ `GET /api/v1/runs/{run_id}/events`（Run SSE，envelope 不变）\n- Conversation 发现：浏览器 -> C++ `GET /api/v1/conversations/{conversation_id}/events`
 - 重放：`Last-Event-ID` 优先，其次 `after` 查询参数
 - 编码：UTF-8，`text/event-stream`
 
@@ -132,9 +132,50 @@ queued -> running -> succeeded
 
 ## 5. 安全与可靠性
 
-- Run 所属 Conversation 的 Project 成员可订阅；viewer 只读。非成员或无角色权限返回 `403 FORBIDDEN`，不返回事件。
-- `Last-Event-ID` 缺失时从 `after` 或 0 开始。
+- Run 所属 Conversation 的 Project 成员可订阅 Run SSE；viewer 只读。非成员或无角色权限返回 `403 FORBIDDEN`，不返回事件。
+- Run SSE 的 `Last-Event-ID` 缺失时从 `after` 或 0 开始。
 - 服务端每 15 秒发送注释心跳，反向代理不得缓冲 SSE。
 - 事件先落库后推送；不从 Worker 直达浏览器。
-- 所有 Project 成员读取同一 Run 的事件序列；SSE URL、事件 envelope 和状态机不变。
+- 所有 Project 成员读取同一 Run 的事件序列；Run SSE URL、envelope 和状态机不变。
 - payload 不记录 API Key、Authorization 头或完整敏感提示词到普通日志。
+
+## 6. Conversation 事件流 V1.0
+
+Conversation 事件流只负责通知“新 Run 可用”。客户端收到 `run.available` 后，必须使用其中的 `run_id` 订阅既有 Run SSE；不得把 Conversation 事件当作模型流。
+
+### 6.1 帧与游标
+
+```text
+retry: 2000
+
+id: 1
+event: run.available
+data: {"schema_version":"1.0","request_id":"req-...","conversation_id":"...","seq":1,"type":"run.available","occurred_at":"2026-11-20T03:00:00Z","payload":{"run_id":"...","target_agent_id":"...","initiated_by_user_id":"...","status":"queued"}}
+```
+
+- `id` 是同一 `conversation_id` 内单调递增的事件序号，从 1 开始。
+- `event` 与 `data.type` 必须相同。
+- 心跳使用 SSE 注释帧，不占用事件序号，不持久化。
+- `Last-Event-ID` 优先，其次 `after`；两者都缺失时从当前 tail 开始，避免首次加载重放历史运行。
+- 显式传入 `Last-Event-ID` 或 `after` 时，服务端回放 `seq > cursor` 的持久化事件。
+- 单次查询最多返回 200 条事件；客户端继续按游标增量读取。
+
+### 6.2 `run.available`
+
+新建或重试 Run 时，C++ Core 在创建 Message/Run/Job 的同一事务内写入事件。幂等重复发送、重试重复键和 active Run 冲突不得新增事件。
+
+Payload 必填字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `run_id` | UUID | 用于订阅既有 Run SSE |
+| `target_agent_id` | UUID | 该 Run 的真实目标 Agent |
+| `initiated_by_user_id` | UUID | 实际创建或重试该 Run 的用户 |
+| `status` | string | 创建时为 `queued` |
+
+### 6.3 授权与边界
+
+- Conversation 所属 Project 的 owner/editor/viewer 均可订阅；viewer 只读。
+- 非 Project 成员返回 `403 FORBIDDEN`，不建立事件流。
+- Conversation 事件由 C++ Core 唯一写入；Worker 不直接写 PostgreSQL。
+- 本事件流不改变单 active Run、Run 状态机、Run SSE envelope、端口或 C++/Go/PostgreSQL 架构边界。

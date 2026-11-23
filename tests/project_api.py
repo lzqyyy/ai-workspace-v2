@@ -33,6 +33,7 @@ def main() -> int:
     if all((fixture_project_id, fixture_user_id, fixture_agent_id, fixture_run_id)):
         expect_error(owner, "DELETE", f"/api/v1/projects/{fixture_project_id}/members/{fixture_user_id}", 409, "CONFLICT")
         expect_error(owner, "DELETE", f"/api/v1/projects/{fixture_project_id}/agents/{fixture_agent_id}", 409, "CONFLICT")
+        expect_error(owner, "POST", f"/api/v1/projects/{fixture_project_id}/archive", 409, "CONFLICT")
         if fixture_conversation_id:
             expect_error(
                 owner,
@@ -53,6 +54,17 @@ def main() -> int:
         owner.request("POST", f"/api/v1/runs/{fixture_run_id}/cancel")
         assert owner.request("DELETE", f"/api/v1/projects/{fixture_project_id}/agents/{fixture_agent_id}") is None
         assert owner.request("DELETE", f"/api/v1/projects/{fixture_project_id}/members/{fixture_user_id}") is None
+        fixture_archive = owner.request("POST", f"/api/v1/projects/{fixture_project_id}/archive")
+        assert fixture_archive["status"] == "archived", fixture_archive
+        expect_error(
+            owner,
+            "POST",
+            f"/api/v1/runs/{fixture_run_id}/retry",
+            409,
+            "CONFLICT",
+            None,
+        )
+        assert owner.request("GET", f"/api/v1/projects/{fixture_project_id}")["status"] == "archived"
         fixture_checked = True
 
     project = owner.request(
@@ -68,6 +80,11 @@ def main() -> int:
     assert not any(item["id"] == project_id for item in member.request("GET", "/api/v1/projects")["items"])
     expect_error(member, "GET", f"/api/v1/projects/{project_id}", 403, "FORBIDDEN")
     expect_error(member, "GET", f"/api/v1/projects/{project_id}/members", 403, "FORBIDDEN")
+    expect_error(member, "GET", f"/api/v1/projects/{project_id}/audit-events", 403, "FORBIDDEN")
+    expect_error(owner, "GET", f"/api/v1/projects/{project_id}/audit-events?limit=1x", 400, "VALIDATION_FAILED")
+    expect_error(owner, "GET", f"/api/v1/projects/{project_id}/audit-events?limit=101", 400, "VALIDATION_FAILED")
+    owner_audit = owner.request("GET", f"/api/v1/projects/{project_id}/audit-events")
+    assert any(item["action"] == "project.create" for item in owner_audit["items"]), owner_audit
 
     added = owner.request(
         "POST",
@@ -79,6 +96,7 @@ def main() -> int:
     members = member.request("GET", f"/api/v1/projects/{project_id}/members")["items"]
     assert {item["role"] for item in members} == {"owner", "viewer"}
     assert member.request("GET", f"/api/v1/projects/{project_id}/agents")["items"] == []
+    expect_error(member, "GET", f"/api/v1/projects/{project_id}/audit-events", 403, "FORBIDDEN")
 
     member_agent = member.request(
         "POST", "/api/v1/agents", {"name": f"Member Agent {uuid.uuid4().hex[:8]}", "system_prompt": "Read only"}
@@ -109,6 +127,7 @@ def main() -> int:
         "PATCH", f"/api/v1/projects/{project_id}/members/{member_user['id']}", {"role": "editor"}
     )
     assert promoted["role"] == "editor"
+    expect_error(member, "GET", f"/api/v1/projects/{project_id}/audit-events", 403, "FORBIDDEN")
     member_project_agent = member.request(
         "POST", f"/api/v1/projects/{project_id}/agents", {"agent_id": member_agent["id"]}
     )
@@ -164,6 +183,131 @@ def main() -> int:
         {"user_id": member_user["id"], "role": "admin"},
     )
 
+    archive_project = owner.request(
+        "POST",
+        "/api/v1/projects",
+        {"name": f"Archive Project {uuid.uuid4().hex[:8]}", "description": "Soft close acceptance"},
+    )
+    archive_project_id = archive_project["id"]
+    archive_conversation = None
+    expect_error(member, "POST", f"/api/v1/projects/{archive_project_id}/archive", 403, "FORBIDDEN")
+
+    owner.request(
+        "POST",
+        f"/api/v1/projects/{archive_project_id}/members",
+        {"user_id": member_user["id"], "role": "viewer"},
+    )
+    expect_error(member, "POST", f"/api/v1/projects/{archive_project_id}/archive", 403, "FORBIDDEN")
+    owner.request(
+        "PATCH",
+        f"/api/v1/projects/{archive_project_id}/members/{member_user['id']}",
+        {"role": "editor"},
+    )
+    expect_error(member, "POST", f"/api/v1/projects/{archive_project_id}/archive", 403, "FORBIDDEN")
+    owner.request("POST", f"/api/v1/projects/{archive_project_id}/agents", {"agent_id": owner_agent["id"]})
+    archive_conversation = owner.request(
+        "POST",
+        f"/api/v1/projects/{archive_project_id}/conversations",
+        {"agent_id": owner_agent["id"], "title": "Read-only after archive"},
+    )
+    owner.request("DELETE", f"/api/v1/projects/{archive_project_id}/members/{member_user['id']}")
+    expect_error(member, "POST", f"/api/v1/projects/{archive_project_id}/archive", 403, "FORBIDDEN")
+
+    archived = owner.request("POST", f"/api/v1/projects/{archive_project_id}/archive")
+    assert archived["status"] == "archived", archived
+    repeated_archive = owner.request("POST", f"/api/v1/projects/{archive_project_id}/archive")
+    assert repeated_archive["status"] == "archived", repeated_archive
+    assert owner.request("GET", f"/api/v1/projects/{archive_project_id}")["status"] == "archived"
+    assert owner.request("GET", f"/api/v1/projects/{archive_project_id}/members")["items"]
+    assert any(
+        item["agent_id"] == owner_agent["id"]
+        for item in owner.request("GET", f"/api/v1/projects/{archive_project_id}/agents")["items"]
+    )
+    assert any(
+        item["id"] == archive_conversation["id"]
+        for item in owner.request("GET", f"/api/v1/projects/{archive_project_id}/conversations")["items"]
+    )
+    assert owner.request("GET", f"/api/v1/conversations/{archive_conversation['id']}/messages")["items"] == []
+
+    expect_error(
+        owner,
+        "POST",
+        f"/api/v1/projects/{archive_project_id}/conversations",
+        409,
+        "CONFLICT",
+        {"agent_id": owner_agent["id"], "title": "blocked"},
+    )
+    expect_error(
+        owner,
+        "POST",
+        f"/api/v1/conversations/{archive_conversation['id']}/messages",
+        409,
+        "CONFLICT",
+        {"content": "blocked after archive", "client_request_id": f"archive-block-{uuid.uuid4()}", "target_agent_id": owner_agent["id"]},
+    )
+    expect_error(
+        owner,
+        "POST",
+        f"/api/v1/projects/{archive_project_id}/members",
+        409,
+        "CONFLICT",
+        {"user_id": member_user["id"], "role": "viewer"},
+    )
+    expect_error(
+        owner,
+        "DELETE",
+        f"/api/v1/projects/{archive_project_id}/members/{member_user['id']}",
+        409,
+        "CONFLICT",
+    )
+    expect_error(
+        owner,
+        "POST",
+        f"/api/v1/projects/{archive_project_id}/agents",
+        409,
+        "CONFLICT",
+        {"agent_id": owner_agent["id"]},
+    )
+    expect_error(
+        owner,
+        "PATCH",
+        f"/api/v1/projects/{archive_project_id}/members/{owner_user['id']}",
+        409,
+        "CONFLICT",
+        {"role": "editor"},
+    )
+    expect_error(
+        owner,
+        "DELETE",
+        f"/api/v1/projects/{archive_project_id}/agents/{owner_agent['id']}",
+        409,
+        "CONFLICT",
+    )
+
+    archive_audit = owner.request("GET", f"/api/v1/projects/{archive_project_id}/audit-events")
+    archive_events = [item for item in archive_audit["items"] if item["action"] == "project.archive"]
+    assert archive_events, archive_audit
+    sensitive_keys = {"content", "cookie", "authorization", "api_key", "password", "token"}
+    for item in archive_audit["items"]:
+        assert not (sensitive_keys & {key.lower() for key in item.get("metadata", {})}), item
+
+    legacy_conversation = member.request(
+        "POST",
+        "/api/v1/conversations",
+        {"agent_id": member_agent["id"], "title": "Legacy archive fixture"},
+    )
+    legacy_project_id = legacy_conversation["project_id"]
+    archived_legacy = member.request("POST", f"/api/v1/projects/{legacy_project_id}/archive")
+    assert archived_legacy["status"] == "archived", archived_legacy
+    expect_error(
+        member,
+        "POST",
+        "/api/v1/conversations",
+        409,
+        "CONFLICT",
+        {"agent_id": member_agent["id"], "title": "Legacy archive blocked"},
+    )
+
     report = {
         "status": "PASS",
         "project_id": project_id,
@@ -171,6 +315,12 @@ def main() -> int:
         "owner_agent_id": owner_agent["id"],
         "member_agent_id": member_agent["id"],
         "active_run_removal_guard": fixture_checked,
+        "archive_owner_only": True,
+        "archive_active_run_guard": fixture_checked,
+        "archived_readonly": True,
+        "archive_audit": True,
+        "audit_owner_only": True,
+        "legacy_archived_conversation_guard": True,
         "non_member_denied": True,
         "viewer_write_denied": True,
         "owner_manage_members": True,

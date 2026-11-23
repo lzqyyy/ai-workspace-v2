@@ -1,8 +1,8 @@
 # 基础对话平台任务看板
 
-更新时间：2026-11-19
-当前候选版本：V0.2.0（REVIEW）
-发布状态：已合并 `main` 并推送 `origin`；未创建 `V0.2.0` tag
+更新时间：2026-11-23
+当前候选版本：V0.2.0（RELEASE REVIEW）
+发布状态：V0.2 多人基线已合并 `main`；`agent/core/conversation-realtime` 增量已推送、待合并；未创建 `V0.2.0` tag
 
 ## 当前任务
 
@@ -44,6 +44,9 @@
 | HOTFIX-20261118 SSE 事件序号与窄屏回归 | CORE/WEB/QA | REVIEW | appendEvent 强制连续序号；跳号/乱序专项 PASS；窄屏侧栏关闭修复；Docker/E2E/Playwright PASS |
 | DOC-20261117 当前事实与交付基线校准 | COORD | REVIEW | 版本/迁移/前端接入/push 状态、归档与幂等边界、UTF-8 长度语义修正；契约与本地验证通过 |
 | IMP-20261119 Run 归属与发送幂等合同 | CORE/COORD | DONE | `client_request_id` 必填、`runs.initiated_by_user_id`、008 迁移、retry/取消权限、OpenAPI 1.0.1；Docker 全量与双浏览器 2H+2A PASS；已合并 `main` |
+| CORE-20261120 Conversation 实时链路 | CORE/WEB/QA | REVIEW | 009 `conversation_events`、Conversation `run.available` SSE/回放、C++ 事务写入、前端真实 target Agent、2.5 秒轮询兜底；专项延迟约 515ms，retry 事件与幂等不重复写入 PASS，Docker/浏览器/health PASS |
+| CORE-20261120 PostgreSQL 连接池 | CORE/QA | REVIEW | 默认 8 连接、5s 获取超时、5s TCP 建连超时、30s 空闲验证、RAII 归还；256 请求/32 并发、PostgreSQL 重启恢复与 connect_timeout PASS |
+| PERM-20261121 Project 权限加固、审计读取与归档 | CORE/WEB/QA | REVIEW | 集中式 role × action、CheckPermission 显式 Project 上下文与 archived 状态、成员移除 Agent 映射清理、owner-only 脱敏审计 API/UI、Q4-B 单向软归档、legacy 归档建会话 409；Docker 全量/API/权限 RPC/浏览器/health PASS |
 
 ## Gate 结果
 
@@ -60,7 +63,7 @@
 | L2-01 中心化多用户部署 | QA | TODO | HTTPS、账号管理、Worker 扩容、备份 |
 | L2-02 Project / ProjectMember | CORE | REVIEW | Package A/B/C 完成契约、迁移、成员/Agent 管理、共享 Conversation、Project member 运行权限；D/E 前端与 2H+2A 验收 PASS |
 | L2-03 私有 Conversation | CORE/WEB | TODO | 共享 Agent、每人独立会话上下文 |
-| L2-04 会话级 SSE | CORE/WEB | REVIEW | Project member Run SSE、回放与双浏览器订阅已验收；Conversation 级新 Run 发现仍为短轮询 |
+| L2-04 会话级 SSE | CORE/WEB | REVIEW | Conversation `run.available` + 既有 Run SSE 已实现并通过专项/双浏览器验收；2.5 秒轮询仅作兜底 |
 | L2-05 Task / Handoff | COORD/CORE | TODO | 第二协作阶段 |
 | L2-06 双 Owner / 双 Agent | COORD | REVIEW | 2H+2A、多 Owner 角色保护、双 Agent 选择与单 active Run 已验收；多 Run 并行后置 |
 | L2-07 第二模型 Provider | WORKER | TODO | 保持统一错误模型 |

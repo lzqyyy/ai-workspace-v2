@@ -1,6 +1,7 @@
 #include "http_server.hpp"
 #include <drogon/drogon.h>
 #include <atomic>
+#include <limits>
 #include <memory>
 using namespace drogon;
 namespace ws {
@@ -87,6 +88,14 @@ private:
 };
 } // namespace
 
+struct StreamState {
+    std::shared_ptr<ResponseStream> stream;
+    std::function<void()> pump;
+    trantor::TimerId timer{0};
+    long long cursor{0};
+    std::chrono::steady_clock::time_point last_heartbeat{std::chrono::steady_clock::now()};
+    bool closed{false};
+};
 void Api::registerRoutes()
 {
     auto& app = drogon::app();
@@ -170,6 +179,31 @@ void Api::registerRoutes()
                                                        const std::string& projectId) {
         run_json(req, cb, true, [this, projectId](const AuthSession& s, const std::string& rid) {
             return service_.getProject(s.user_id, projectId, rid);
+        });
+    }, {Get});
+
+    app.registerHandler("/api/v1/projects/{1}/archive", [this](const HttpRequestPtr& req,
+                                                                std::function<void(const HttpResponsePtr&)>&& cb,
+                                                                const std::string& projectId) {
+        run_json(req, cb, true, [this, req, projectId](const AuthSession& s, const std::string& rid) {
+            enforce_origin(req); return service_.archiveProject(s.user_id, projectId, rid);
+        });
+    }, {Post});
+
+    app.registerHandler("/api/v1/projects/{1}/audit-events", [this](const HttpRequestPtr& req,
+                                                                   std::function<void(const HttpResponsePtr&)>&& cb,
+                                                                   const std::string& projectId) {
+        run_json(req, cb, true, [this, req, projectId](const AuthSession& s, const std::string& rid) {
+            int limit = 50;
+            if (!req->getParameter("limit").empty()) {
+                const auto raw = req->getParameter("limit");
+                std::size_t consumed = 0;
+                try { limit = std::stoi(raw, &consumed); }
+                catch (...) { throw ServiceError(400, "VALIDATION_FAILED", "limit must be an integer"); }
+                if (consumed != raw.size())
+                    throw ServiceError(400, "VALIDATION_FAILED", "limit must be an integer");
+            }
+            return service_.listProjectAuditEvents(s.user_id, projectId, limit, rid);
         });
     }, {Get});
 
@@ -276,17 +310,71 @@ void Api::registerRoutes()
         }
     }, {Get, Post});
 
+    app.registerHandler("/api/v1/conversations/{1}/events", [this](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb, const std::string& conversationId) {
+        const std::string rid = request_id_from(req->getParameter("request_id"));
+        try {
+            const std::string checked = required_request_id(req);
+            auto session = authenticate(req);
+            long long cursor = 0;
+            std::string last = req->getHeader("last-event-id");
+            if (last.empty()) last = req->getParameter("after");
+            if (last.empty()) {
+                auto tail = service_.listConversationEvents(session.user_id, conversationId,
+                                                            std::numeric_limits<long long>::max(), checked);
+                cursor = tail["cursor"].get<long long>();
+            } else {
+                try { cursor = std::stoll(last); } catch (...) { cursor = 0; }
+            }
+            (void)service_.listConversationEvents(session.user_id, conversationId, cursor, checked);
+            const std::string conversation_id = conversationId;
+            const std::string user_id = session.user_id;
+            auto state = std::make_shared<StreamState>();
+            state->cursor = cursor;
+            auto response = HttpResponse::newAsyncStreamResponse(
+                [this, state, user_id, conversation_id, checked](ResponseStreamPtr stream) {
+                    state->stream = std::shared_ptr<ResponseStream>(stream.release());
+                    state->stream->send("retry: 2000\n\n");
+                    auto close = [state]() {
+                        if (state->closed) return;
+                        state->closed = true;
+                        if (state->timer) drogon::app().getLoop()->invalidateTimer(state->timer);
+                        state->stream->close();
+                    };
+                    state->pump = [this, state, user_id, conversation_id, checked, close]() {
+                        if (state->closed) return;
+                        try {
+                            auto result = service_.listConversationEvents(
+                                user_id, conversation_id, state->cursor, checked);
+                            for (const auto& event : result["items"]) {
+                                state->cursor = event["seq"].get<long long>();
+                                const std::string type = event["type"].get<std::string>();
+                                const std::string frame = "id: " + std::to_string(state->cursor) + "\nevent: " + type +
+                                                          "\ndata: " + event.dump() + "\n\n";
+                                if (!state->stream->send(frame)) { close(); return; }
+                            }
+                            auto now = std::chrono::steady_clock::now();
+                            if (now - state->last_heartbeat >= std::chrono::seconds(15)) {
+                                state->last_heartbeat = now;
+                                if (!state->stream->send(": heartbeat " + std::to_string(std::time(nullptr)) + "\n\n")) close();
+                            }
+                        } catch (...) { close(); }
+                    };
+                    state->timer = drogon::app().getLoop()->runEvery(0.5, [state]() { if (state->pump) state->pump(); });
+                    state->pump();
+                }, true);
+            response->setStatusCode(k200OK);
+            response->setContentTypeString("text/event-stream; charset=utf-8");
+            response->addHeader("Cache-Control", "no-cache, no-transform");
+            response->addHeader("X-Accel-Buffering", "no");
+            response->addHeader("X-Request-ID", checked);
+            cb(response);
+        } catch (const ServiceError& e) { cb(error_response(e, rid)); }
+        catch (...) { cb(internal_error(rid)); }
+    }, {Get});
+
     registerRunRoutes();
 }
 
-struct StreamState {
-    std::shared_ptr<ResponseStream> stream;
-    std::function<void()> pump;
-    trantor::TimerId timer{0};
-    long long cursor{0};
-    std::chrono::steady_clock::time_point last_heartbeat{std::chrono::steady_clock::now()};
-    bool closed{false};
-};
 
 void Api::registerRunRoutes()
 {

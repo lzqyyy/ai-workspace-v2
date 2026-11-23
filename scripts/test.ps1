@@ -27,6 +27,8 @@ if ($Docker) {
         Invoke-Docker @('run', '--rm', '-v', "${root}:/src", '-w', '/src', 'node:24-bookworm-slim', 'node', '--check', 'frontend/app.js') 'Frontend syntax check failed in Docker'
         Invoke-Docker @('run', '--rm', '-v', "${root}:/src", '-w', '/src', 'node:24-bookworm-slim', 'node', 'tests/frontend_state_test.js') 'Frontend state test failed in Docker'
 
+        & (Join-Path $PSScriptRoot 'test-pool.ps1') -Docker
+        if ($LASTEXITCODE -ne 0) { throw 'Database pool checks failed' }
         & (Join-Path $PSScriptRoot 'e2e.ps1') -Docker
         if ($LASTEXITCODE -ne 0) { throw 'E2E failed' }
         & (Join-Path $PSScriptRoot 'test-migrations.ps1') -Docker

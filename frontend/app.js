@@ -18,12 +18,14 @@ const els = {
   sendButton: $('send-button'), cancelButton: $('cancel-button'), inlineError: $('inline-error'), inlineErrorText: $('inline-error-text'),
   retryButton: $('retry-button'), composerHint: $('composer-hint'), readonlyNote: $('readonly-note'), agentDialog: $('agent-dialog'),
   agentForm: $('agent-form'), agentName: $('agent-name'), agentPrompt: $('agent-prompt'), agentError: $('agent-error'),
-  agentSubmit: $('agent-submit'), toast: $('toast')
+  agentSubmit: $('agent-submit'), archiveProject: $('archive-project'), auditSection: $('audit-section'),
+  auditEvents: $('audit-events'), refreshAudit: $('refresh-audit'), toast: $('toast')
 };
 
 const state = {
   user: null, projects: [], project: null, role: null, members: [], projectAgents: [], ownedAgents: [],
   conversations: [], activeConversation: null, messages: [], targetAgentId: null, run: null, eventSource: null,
+  conversationEventSource: null, conversationEventCursor: 0,
   lastRunId: null, lastRunOwnerId: null, terminalRuns: new Set(), retrying: false, sending: false,
   cancelling: false, retryVisible: false, pollTimer: null, messageLoadSeq: 0, toastTimer: null
 };
@@ -55,14 +57,15 @@ async function api(path, options = {}) {
   return data;
 }
 
-function canWrite() { return state.role === 'owner' || state.role === 'editor'; }
-function canManage() { return state.role === 'owner'; }
+function projectActive() { return state.project?.status === 'active'; }
+function canWrite() { return projectActive() && (state.role === 'owner' || state.role === 'editor'); }
+function canManage() { return projectActive() && state.role === 'owner'; }
 function canCancelRun(run = state.run) { return canWrite() && Boolean(run) && (state.role === 'owner' || run.ownerId === state.user?.id); }
 function canRetryLast() { return canWrite() && Boolean(state.lastRunId) && (state.role === 'owner' || state.lastRunOwnerId === state.user?.id); }
 function activeRun() { return state.run && state.run.conversationId === state.activeConversation?.id ? state.run : null; }
 function currentMember() { return state.members.find((member) => member.user_id === state.user?.id) || null; }
 
-function showAuth() { stopPolling(); closeRunStream(); els.workspace.classList.add('hidden'); els.auth.classList.remove('hidden'); els.loginButton.disabled = false; setTimeout(() => $('username').focus(), 20); }
+function showAuth() { stopPolling(); closeRunStream(); closeConversationStream(); els.workspace.classList.add('hidden'); els.auth.classList.remove('hidden'); els.loginButton.disabled = false; setTimeout(() => $('username').focus(), 20); }
 function showWorkspace() { els.auth.classList.add('hidden'); els.workspace.classList.remove('hidden'); }
 function toast(message) { clearTimeout(state.toastTimer); els.toast.textContent = message; els.toast.classList.remove('hidden'); state.toastTimer = setTimeout(() => els.toast.classList.add('hidden'), 2600); }
 function formatTime(value) { if (!value) return ''; const date = new Date(value); if (Number.isNaN(date.getTime())) return ''; return new Intl.DateTimeFormat('zh-CN', {hour: '2-digit', minute: '2-digit'}).format(date); }
@@ -75,22 +78,29 @@ function applyPermissions() {
   const hasConversation = Boolean(state.activeConversation);
   const hasAgents = state.projectAgents.length > 0;
   const viewer = hasProject && state.role === 'viewer';
+  const archived = hasProject && !projectActive();
   const locked = Boolean(state.run) || state.sending || state.cancelling;
   els.projectSelect.disabled = state.projects.length === 0;
   els.projectSettings.disabled = !hasProject;
   els.newConversation.disabled = !canWrite() || !hasAgents || locked;
-  els.agentSelect.disabled = !hasProject || !hasAgents;
+  els.agentSelect.disabled = !hasProject || !hasAgents || archived;
   els.messageInput.disabled = !canWrite() || !hasConversation || locked;
   els.sendButton.disabled = !canWrite() || !hasConversation || locked || !state.targetAgentId;
   els.cancelButton.classList.toggle('hidden', !canCancelRun());
   els.cancelButton.disabled = state.cancelling;
   els.retryButton.classList.toggle('hidden', !state.retryVisible);
   els.retryButton.disabled = state.retrying;
-  els.readonlyNote.classList.toggle('hidden', !viewer);
+  els.readonlyNote.classList.toggle('hidden', !viewer && !archived);
+  els.readonlyNote.textContent = archived ? 'Project 已归档，当前为只读历史。' : '当前为 viewer，只读查看共享消息与 SSE 运行状态。';
   els.showMemberForm.classList.toggle('hidden', !canManage());
   els.addAgentControls.classList.toggle('hidden', !canWrite());
-  els.messageInput.placeholder = viewer ? '当前为 viewer，只读查看共享会话' : state.run ? '当前已有运行中的任务' : '输入消息，Enter 发送，Shift + Enter 换行';
-  if (viewer) els.composerHint.textContent = 'viewer 只读 · SSE 实时查看';
+  els.auditSection.classList.toggle('hidden', !hasProject || state.role !== 'owner');
+  els.archiveProject.hidden = !hasProject || state.role !== 'owner';
+  els.archiveProject.disabled = !projectActive();
+  els.archiveProject.textContent = archived ? 'Project 已归档' : '归档 Project';
+  els.messageInput.placeholder = archived ? 'Project 已归档，只读查看历史' : viewer ? '当前为 viewer，只读查看共享会话' : state.run ? '当前已有运行中的任务' : '输入消息，Enter 发送，Shift + Enter 换行';
+  if (archived) els.composerHint.textContent = 'Project 已归档 · 只读历史';
+  else if (viewer) els.composerHint.textContent = 'viewer 只读 · SSE 实时查看';
   else if (state.role) els.composerHint.textContent = `${state.role} · target_agent_id 由 Project Agent 选择器提交`;
 }
 function setSending(busy) { state.sending = Boolean(busy); applyPermissions(); }
@@ -105,10 +115,10 @@ async function login(event) {
 }
 async function logout() {
   try { await api('/api/v1/auth/logout', {method: 'POST'}); } catch {}
-  stopPolling(); closeRunStream(); localStorage.removeItem('workspace.activeRun'); localStorage.removeItem('workspace.projectId');
+  stopPolling(); closeRunStream(); closeConversationStream(); localStorage.removeItem('workspace.activeRun'); localStorage.removeItem('workspace.projectId');
   state.user = null; state.projects = []; state.project = null; state.role = null; state.members = []; state.projectAgents = [];
   state.ownedAgents = []; state.conversations = []; state.messages = []; state.activeConversation = null; state.run = null;
-  state.lastRunId = null; state.lastRunOwnerId = null; showAuth();
+  state.conversationEventCursor = 0; state.lastRunId = null; state.lastRunOwnerId = null; showAuth();
 }
 async function bootstrap() {
   try {
@@ -132,6 +142,7 @@ function renderProjectSelect() {
   if (state.project) els.projectSelect.value = state.project.id;
 }
 function resetProjectSelection() {
+  closeConversationStream();
   state.project = null; state.role = null; state.members = []; state.projectAgents = []; state.conversations = []; state.messages = [];
   state.activeConversation = null; state.targetAgentId = null; els.projectName.textContent = '未选择 Project';
   els.projectDescription.textContent = '创建或加入 Project 后开始协作'; els.roleBadge.textContent = '—'; els.roleBadge.className = 'role-badge';
@@ -139,6 +150,7 @@ function resetProjectSelection() {
 }
 async function selectProject(projectId) {
   if (!projectId) return;
+  closeConversationStream();
   const encoded = encodeURIComponent(projectId);
   const [project, members, agents, conversations] = await Promise.all([
     api(`/api/v1/projects/${encoded}`), api(`/api/v1/projects/${encoded}/members`),
@@ -154,7 +166,7 @@ async function selectProject(projectId) {
 
 function renderProjectHeader() {
   els.projectName.textContent = state.project?.name || '未选择 Project';
-  els.projectDescription.textContent = state.project?.description || 'Project 成员共享成员、Agent 与会话';
+  els.projectDescription.textContent = state.project?.status === 'archived' ? 'Project 已归档 · 只读历史' : state.project?.description || 'Project 成员共享成员、Agent 与会话';
   els.roleBadge.textContent = state.role || '非成员'; els.roleBadge.className = `role-badge ${state.role || ''}`.trim();
   els.userRole.textContent = state.role ? `${state.role} · Project 成员` : '未加入 Project';
   els.settingsProjectName.textContent = state.project?.name || 'Project 详情';
@@ -244,7 +256,7 @@ async function selectConversation(id) {
   state.activeConversation = conversation; localStorage.setItem(`workspace.conversation.${state.project.id}`, conversation.id);
   renderConversations(); els.emptyState.classList.add('hidden'); els.messages.classList.remove('hidden');
   els.conversationTitle.textContent = conversation.title; els.conversationSubtitle.textContent = `${state.project.name} · ${state.role} · ${state.projectAgents.length} 个 Project Agent`;
-  clearError(); await loadMessages(true); if (state.run?.conversationId === id && !state.eventSource) connectRun(); startPolling();
+  clearError(); connectConversationStream(); await loadMessages(true); if (state.run?.conversationId === id && !state.eventSource) connectRun(); startPolling();
 }
 function messageSenderName(message) {
   if (message.sender_type === 'agent') { const projectAgent = state.projectAgents.find((item) => item.agent_id === message.sender_id); return projectAgent?.agent?.name || state.activeConversation?.agent_name || 'Agent'; }
@@ -272,15 +284,21 @@ async function loadMessages(showError = true) {
   try {
     const response = await api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`);
     if (loadSeq !== state.messageLoadSeq || state.activeConversation?.id !== conversationId) return false;
-    state.messages = response.items || []; const discovered = discoverRunFromMessages(); renderMessages(); return discovered;
+    state.messages = response.items || []; const discovered = await discoverRunFromMessages(); renderMessages(); return discovered;
   } catch (error) { if (loadSeq === state.messageLoadSeq && showError && state.activeConversation?.id === conversationId) setError(error.message, error.retryable); return false; }
 }
-function discoverRunFromMessages() {
+async function discoverRunFromMessages() {
   if (state.run || !state.activeConversation) return false;
+  const conversationId = state.activeConversation.id;
   const completed = new Set(state.messages.filter((message) => message.sender_type === 'agent' && message.run_id).map((message) => message.run_id));
   const pending = [...state.messages].reverse().find((message) => message.sender_type === 'user' && message.run_id && !completed.has(message.run_id) && !state.terminalRuns.has(message.run_id));
   if (!pending) return false;
-  beginRun(pending.run_id, state.activeConversation.id, 0, '', pending.sender_id, state.targetAgentId); return true;
+  try {
+    const run = await api(`/api/v1/runs/${encodeURIComponent(pending.run_id)}`);
+    if (state.run || state.activeConversation?.id !== conversationId) return false;
+    if (!['queued', 'running'].includes(run.status)) { state.terminalRuns.add(pending.run_id); return false; }
+    beginRun(pending.run_id, conversationId, 0, '', run.initiated_by_user_id, run.agent_id); return true;
+  } catch { return false; }
 }
 function persistRun() {
   if (!state.run) { localStorage.removeItem('workspace.activeRun'); return; }
@@ -289,6 +307,50 @@ function persistRun() {
     lastEventId: state.run.lastEventId, partial: state.run.partial}));
 }
 function closeRunStream() { if (state.eventSource) { state.eventSource.close(); state.eventSource = null; } }
+function conversationCursorKey(conversationId) { return `workspace.conversationEventCursor.${conversationId}`; }
+function closeConversationStream() { if (state.conversationEventSource) { state.conversationEventSource.close(); state.conversationEventSource = null; } }
+function connectConversationStream() {
+  if (!state.activeConversation) return;
+  closeConversationStream();
+  const conversation = state.activeConversation;
+  const savedCursor = Number(localStorage.getItem(conversationCursorKey(conversation.id))) || 0;
+  state.conversationEventCursor = savedCursor;
+  const requestId = `web-conversation-sse-${uuid()}`;
+  const after = savedCursor > 0 ? `&after=${savedCursor}` : '';
+  const source = new EventSource(`/api/v1/conversations/${encodeURIComponent(conversation.id)}/events?request_id=${encodeURIComponent(requestId)}${after}`);
+  state.conversationEventSource = source;
+  source.addEventListener('run.available', (event) => handleConversationEvent(event, conversation.id));
+  source.onerror = () => {
+    if (state.activeConversation?.id !== conversation.id || state.conversationEventSource !== source) return;
+    if (source.readyState === 2) {
+      source.close(); state.conversationEventSource = null;
+      setTimeout(() => { if (state.activeConversation?.id === conversation.id && !state.conversationEventSource) connectConversationStream(); }, 1800);
+    }
+  };
+}
+function handleConversationEvent(event, conversationId) {
+  if (state.activeConversation?.id !== conversationId) return;
+  let envelope; try { envelope = JSON.parse(event.data); } catch { return; }
+  const seq = Number(envelope.seq) || 0;
+  if (seq && seq <= state.conversationEventCursor) return;
+  if (seq) {
+    state.conversationEventCursor = seq;
+    localStorage.setItem(conversationCursorKey(conversationId), String(seq));
+  }
+  const payload = envelope.payload || {};
+  if (envelope.type !== 'run.available' || !payload.run_id || !payload.target_agent_id || !payload.initiated_by_user_id) return;
+  if (!['queued', 'running'].includes(payload.status) || state.terminalRuns.has(payload.run_id)) return;
+  if (state.messages.some((message) => message.sender_type === 'agent' && message.run_id === payload.run_id)) {
+    state.terminalRuns.add(payload.run_id); return;
+  }
+  if (state.run?.runId === payload.run_id) {
+    state.run.targetAgentId = payload.target_agent_id;
+    state.run.ownerId = payload.initiated_by_user_id;
+    persistRun(); renderMessages(); applyPermissions(); return;
+  }
+  if (state.run?.conversationId === conversationId) return;
+  beginRun(payload.run_id, conversationId, 0, '', payload.initiated_by_user_id, payload.target_agent_id);
+}
 
 async function sendMessage(event) {
   event?.preventDefault(); const content = els.messageInput.value.trim();
@@ -306,7 +368,7 @@ async function sendMessage(event) {
   } catch (error) {
     state.sending = false; setRunState('error', error.status === 409 ? '运行冲突' : '创建失败');
     setError(error.status === 409 ? '当前共享会话已有运行中的任务，请等待完成后再发送。' : error.message, error.retryable);
-    await loadMessages(false); discoverRunFromMessages();
+    await loadMessages(false);
   } finally { if (!state.run) setSending(false); }
 }
 async function createConversation() {
@@ -349,10 +411,22 @@ async function retryRun() {
   finally { state.retrying = false; if (!state.run) setSending(false); }
 }
 function beginRun(runId, conversationId, lastEventId = 0, partial = '', ownerId = null, targetAgentId = null) {
-  closeRunStream(); state.run = {runId, conversationId, ownerId, targetAgentId, lastEventId: Number(lastEventId) || 0, partial: partial || '', reconnecting: false};
-  state.lastRunId = runId; state.lastRunOwnerId = ownerId; state.sending = false; persistRun();
-  setRunState('active', ownerId && ownerId !== state.user?.id ? '协作者运行中' : 'Run 已排队'); clearError();
-  if (state.activeConversation?.id === conversationId) renderMessages(); applyPermissions(); connectRun();
+  const existing = state.run?.runId === runId ? state.run : null;
+  if (!existing) closeRunStream();
+  state.run = {
+    runId, conversationId,
+    ownerId: existing?.ownerId || ownerId || null,
+    targetAgentId: existing?.targetAgentId || targetAgentId || null,
+    lastEventId: existing ? existing.lastEventId : Number(lastEventId) || 0,
+    partial: existing ? existing.partial : partial || '',
+    reconnecting: false,
+  };
+  state.lastRunId = runId; state.lastRunOwnerId = state.run.ownerId; state.sending = false; persistRun();
+  setRunState('active', state.run.ownerId && state.run.ownerId !== state.user?.id ? '协作者运行中' : 'Run 已排队'); clearError();
+  if (state.activeConversation?.id === conversationId) {
+    renderMessages(); applyPermissions();
+    if (!state.eventSource) connectRun();
+  }
 }
 function connectRun() {
   if (!state.run) return; closeRunStream(); const run = state.run; const requestId = `web-sse-${uuid()}`;
@@ -426,7 +500,41 @@ async function createProject(event) {
 }
 function openProjectSettings() {
   if (!state.project) return; els.settingsError.textContent = ''; els.memberForm.classList.add('hidden');
-  renderMembers(); renderProjectAgents(); els.projectSettingsDialog.showModal();
+  renderMembers(); renderProjectAgents();
+  if (state.role === 'owner') loadAuditEvents();
+  els.projectSettingsDialog.showModal();
+}
+async function loadAuditEvents() {
+  if (!state.project || state.role !== 'owner') return;
+  try {
+    const data = await api(`/api/v1/projects/${encodeURIComponent(state.project.id)}/audit-events?limit=20`);
+    renderAuditEvents(data.items || []);
+  } catch (error) { els.settingsError.textContent = error.message; }
+}
+function renderAuditEvents(items) {
+  els.auditEvents.replaceChildren();
+  if (!items.length) {
+    const empty = document.createElement('div'); empty.className = 'settings-row-main'; empty.textContent = '暂无审计记录';
+    els.auditEvents.append(empty); return;
+  }
+  for (const item of items) {
+    const row = document.createElement('div'); row.className = 'settings-row';
+    const main = document.createElement('div'); main.className = 'settings-row-main';
+    const action = document.createElement('strong'); action.textContent = item.action || 'audit';
+    const metadata = Object.entries(item.metadata || {}).map(([key, value]) => `${key}=${value}`).join(' · ');
+    const detail = document.createElement('small'); detail.textContent = `${item.result} · ${item.resource_type} · ${item.created_at}${metadata ? ` · ${metadata}` : ''}`;
+    main.append(action, detail); row.append(main); els.auditEvents.append(row);
+  }
+}
+async function archiveCurrentProject() {
+  if (!state.project || state.role !== 'owner' || !projectActive()) return;
+  if (!window.confirm('归档后 Project 将只读，历史数据会保留。确认归档？')) return;
+  els.settingsError.textContent = '';
+  try {
+    const project = await api(`/api/v1/projects/${encodeURIComponent(state.project.id)}/archive`, {method: 'POST'});
+    state.project = project; state.projects = state.projects.map((item) => item.id === project.id ? project : item);
+    renderProjectHeader(); applyPermissions(); await refreshProjectData(); await loadAuditEvents(); toast('Project 已归档');
+  } catch (error) { els.settingsError.textContent = error.message; }
 }
 async function refreshProjectData() {
   if (!state.project) return; const encoded = encodeURIComponent(state.project.id);
@@ -473,6 +581,7 @@ function bindEvents() {
   els.projectSelect.addEventListener('change', () => selectProject(els.projectSelect.value)); els.projectForm.addEventListener('submit', createProject);
   els.agentForm.addEventListener('submit', createAgent); els.memberForm.addEventListener('submit', addMember);
   els.showMemberForm.addEventListener('click', () => els.memberForm.classList.toggle('hidden')); els.addOwnedAgent.addEventListener('click', addOwnedAgent);
+  els.archiveProject.addEventListener('click', archiveCurrentProject); els.refreshAudit.addEventListener('click', loadAuditEvents);
   els.cancelButton.addEventListener('click', cancelRun); els.retryButton.addEventListener('click', retryRun);
   els.emptyAction.addEventListener('click', () => { if (!state.project) openProjectDialog(); else if (!state.projectAgents.length || !canWrite()) openProjectSettings(); else createConversation(); });
   els.agentSelect.addEventListener('change', () => { state.targetAgentId = els.agentSelect.value; if (state.project) localStorage.setItem(`workspace.targetAgent.${state.project.id}`, state.targetAgentId); applyPermissions(); });

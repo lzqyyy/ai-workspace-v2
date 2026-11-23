@@ -6,7 +6,7 @@ option go_package = "ai-workspace-v2/worker/gen/aiworkspace/v1;aiworkspacev1";
 option java_multiple_files = true;
 option java_package = "com.aiworkspace.v1";
 
-// Contract version: 1.0.0
+// Contract version: 1.2.0
 // C++ owns all persistence. Workers receive only leased execution context.
 
 service JobService {
@@ -167,6 +167,7 @@ message CheckPermissionRequest {
   ResourceType resource_type = 3;
   string resource_id = 4;
   string action = 5;
+  string project_id = 6;
 }
 
 message CheckPermissionResponse {

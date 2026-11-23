@@ -226,6 +226,13 @@ def main() -> int:
     expect_error(editor, "POST", f"/api/v1/runs/{cancel_run}/retry", 403, "FORBIDDEN", None)
 
     owner.request("DELETE", f"/api/v1/projects/{project_id}/members/{editor_user['id']}")
+    remaining_agents = owner.request("GET", f"/api/v1/projects/{project_id}/agents")["items"]
+    assert not any(item["agent_id"] == editor_agent["id"] for item in remaining_agents), remaining_agents
+    preserved_history = owner.request("GET", f"/api/v1/conversations/{conversation_id}/messages")["items"]
+    assert any(item["id"] == owner_run for item in preserved_history) or any(item["run_id"] == owner_run for item in preserved_history), preserved_history
+    member_remove_audit = owner.request("GET", f"/api/v1/projects/{project_id}/audit-events?limit=100")["items"]
+    remove_event = next(item for item in member_remove_audit if item["action"] == "project.member.remove")
+    assert remove_event["metadata"].get("removed_agent_count", 0) >= 1, remove_event
     expect_error(editor, "GET", f"/api/v1/conversations/{conversation_id}/messages", 403, "FORBIDDEN", None)
     expect_error(
         editor,
@@ -258,6 +265,8 @@ def main() -> int:
         "viewer_read_only": True,
         "non_member_denied": True,
         "removed_agent_owner_denied": True,
+        "removed_agent_mapping_cleanup": True,
+        "history_preserved_after_member_removal": True,
         "run_permissions": True,
         "run_attribution": True,
         "invalid_target_validation": True,

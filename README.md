@@ -2,7 +2,7 @@
 
 本仓交付当前最小 MVP：两个人类与两个 Agent 在同一 Project、同一共享 Conversation 中协作。浏览器只连接 C++ Core，C++ 是唯一 PostgreSQL 业务写入者，Go Worker 通过 gRPC 领取 Job 并执行 Mock/兼容模型流式调用。
 
-当前状态：`V0.2.0` 候选为 `REVIEW`；分支已推送 `origin`，尚未合并 `main`，尚未创建 `V0.2.0` tag。验收事实见 `docs/acceptance/V0.2-multiplayer-mvp.md`。
+当前状态：`V0.2.0` 发布候选已完成全链路测试并推送；当前分支 `agent/core/conversation-realtime` 待合并 `main`，`V0.2.0` tag 尚未创建。验收事实见 `docs/acceptance/V0.2-multiplayer-mvp.md`。
 
 ```text
 Browser -> C++ HTTP/SSE :8080 -> PostgreSQL :5432
@@ -11,13 +11,15 @@ Browser -> C++ HTTP/SSE :8080 -> PostgreSQL :5432
 
 ## 已实现
 
-- Project 创建/列表/详情；owner/editor/viewer 角色与成员管理。
+- Project 创建/列表/详情、owner-only 软归档与脱敏审计读取；owner/editor/viewer 角色与成员管理。
 - Agent 所有权和 Project Agent 映射；只有 Agent owner 能加入自己的 Agent。
 - Project-first 共享 Conversation、共享 Message 历史、必填 `target_agent_id`。
 - 同一 Conversation 单 active Run；发送/retry 冲突返回 409。
 - Project member Run/SSE 权限；owner/editor 操作自己的 Run，owner 可操作任意 Run，viewer 只读。
-- 原生 HTML/CSS/JavaScript Project-first 工作台、目标 Agent 选择、共享 SSE 发现与断线回放。
-- Docker-first 启动、Docker/浏览器 E2E、迁移重放、health 与演示脚本。
+- 原生 HTML/CSS/JavaScript Project-first 工作台、目标 Agent 选择、Conversation `run.available` 实时发现、共享 Run SSE 与断线回放。
+- 2.5 秒消息轮询保留为发现/刷新兜底；新 Run 不再只依赖轮询。
+- C++ PostgreSQL 固定上限连接池：复用连接、获取超时、TCP connect_timeout、空闲连接验证、事务回滚与失效连接丢弃。
+- Docker-first 启动、Docker/浏览器 E2E、连接池压力、迁移重放、health 与演示脚本。
 
 ## 快速启动
 
@@ -54,7 +56,7 @@ Docker-first 全量：
 ./scripts/test.ps1 -Docker
 ```
 
-包含契约、Go Worker test/vet、前端状态、单用户 E2E、2H+2A API E2E、Project 权限 fixture、审计与迁移重放。
+包含契约、Go Worker test/vet、前端状态、连接池并发/归还、单用户 E2E、2H+2A API E2E、Project 权限 fixture、审计与迁移重放。
 
 浏览器 E2E：
 
@@ -68,6 +70,7 @@ Docker-first 全量：
 专项：
 
 ```powershell
+./scripts/test-pool.ps1 -Docker
 ./scripts/test-migrations.ps1 -Docker
 ./scripts/test-health.ps1
 ./scripts/test-lease.ps1
@@ -96,9 +99,13 @@ Docker-first 全量：
 - 2H+2A 演示：`docs/runbook/A15-multiplayer-demo.md`
 - 交接记录：`docs/handoffs/`
 
+## 运行配置
+
+Core 通过 `DB_POOL_SIZE`（默认 `8`）、`DB_ACQUIRE_TIMEOUT_MS`（默认 `5000`）、`DB_CONNECT_TIMEOUT_SECONDS`（默认 `5`）和 `DB_IDLE_VALIDATE_SECONDS`（默认 `30`）控制 PostgreSQL 连接池。
+
 ## 当前限制
 
 - 未实现 Task/Handoff、文件、共享记忆、插件、诊断、匹配、Agreement、Trial 或多 Run 并行。
-- Project 归档策略已写入最小 MVP PRD，但冻结 OpenAPI 没有归档路由，当前也没有运行时入口；补齐需另行批准版本化契约变更。
-- 新 Run 的跨成员发现依赖活动 Conversation 的短轮询；Run 事件本身仍使用冻结的 SSE 契约与持久化游标。
+- Project 归档为单向软关闭，归档后历史只读；本版没有取消归档。
+- Conversation SSE 与 Run SSE 均由 C++ 查询 PostgreSQL 事件表推动；当前不引入数据库 LISTEN/NOTIFY 或外部消息总线。
 - 生产部署仍需 HTTPS 反向代理、账号管理、Worker 扩容与备份策略。

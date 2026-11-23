@@ -8,7 +8,7 @@ agent_contract:
   canonical_branch: main
   remote: origin
   current_release: v0.1.0
-  current_candidate: "V0.2.0 (REVIEW, not merged to main)"
+  current_candidate: "V0.2.0 release review; baseline merged, conversation-realtime increment not yet merged"
   current_scope: L0 + L1 + minimal multiplayer MVP (Project/ProjectMember/shared Conversation/2H+2A)
   auto_sync_skill: .agents/skills/github-auto-sync/SKILL.md
   auto_approval_skill: .agents/skills/project-auto-approval/SKILL.md
@@ -51,20 +51,20 @@ agent_contract:
 ### 已实现
 
 - 原生 HTML/CSS/JavaScript Project-first 登录与多人对话工作台。
-- C++ Drogon REST/SSE Core。
+- C++ Drogon REST/SSE Core，含固定上限 PostgreSQL 连接池与获取超时。
 - 6 个 gRPC RPC 与 Go Worker。
 - PostgreSQL 持久化、事务、Job 租约、重试、取消和幂等。
 - Mock 流式 Provider 与 OpenAI-compatible Provider 适配器。
-- Project、ProjectMember、ProjectAgent；owner/editor/viewer 权限与审计。
+- Project、ProjectMember、ProjectAgent；owner/editor/viewer 权限与审计；owner-only Project 软归档和脱敏审计读取。
 - Project-first 共享 Conversation、`target_agent_id` 发送、单 active Run 和 Project member Run/SSE 权限。
-- 浏览器刷新后的历史恢复、Run SSE 游标回放、跨成员 Run 发现。
+- 浏览器刷新后的历史恢复、Run SSE 游标回放、Conversation `run.available` 实时发现和 2.5 秒轮询兜底。
+- Conversation 事件由 `009_conversation_events.sql` 持久化，C++ 在创建/重试 Run 的同一事务写入。
 - Docker-first 启动、契约/API/双浏览器 E2E、迁移重放和 2H+2A 演示脚本。
 - 本地开发、Docker Compose、Runbook 和交接体系。
 - GitHub 自动同步 Skill（本任务用户明确禁止 push 时以用户指令为准）。
 
 ### 尚未实现
 
-- Conversation 级实时事件/订阅；跨成员新 Run 当前依赖活动 Conversation 短轮询发现。
 - Task / Handoff、文件、共享记忆和插件系统。
 - 诊断、能力缺口、匹配、Agreement、Trial。
 - 多 Run 并行、Conversation 独立成员、消息编辑删除。
@@ -78,6 +78,10 @@ agent_contract:
 - owner/editor 只能取消/重试 `runs.initiated_by_user_id = current_user_id` 的 Run；owner 可取消/重试任意 Run。
 - Agent 归 owner 所有；只有 Agent owner 能把自己的 active Agent 加入 Project。
 - 非 Project 成员访问 Project 资源统一返回 403；一个 Conversation 同时最多一个 queued/running Run。
+- C++ 连接池默认上限 8、获取超时 5000ms、TCP 建连超时 5s、空闲验证 30s；事务未提交会话归还前会回滚，失效连接不回到池。
+- Conversation 事件与 Run SSE 使用同一 Project membership 授权边界；viewer 可订阅，非成员 403。
+- 集中式 role × action 矩阵同时服务 REST 授权与 gRPC `CheckPermission`；Agent 权限判断显式要求匹配 `project_id`。
+- Project 归档为单向软关闭：owner-only、active Run 时 409、归档后读取保留而写操作 409；成员移除会在同一事务清理其 Project Agent 映射并保留历史。
 - 前端按钮状态只用于交互，服务端始终是唯一授权依据。
 
 ## 3. 架构红线
@@ -399,10 +403,9 @@ Worker 上下文必须包含本次 trigger message；否则模型会引用上一
 按顺序推进：
 
 1. 中心化多用户部署：HTTPS、正式账号、限流、审计查询、Worker 扩展、备份。
-2. Conversation 级实时通知或 Run subscription 发现，消除跨成员新 Run 的短轮询延迟；保持现有 Run SSE envelope。
-3. 多 Run 并行前的锁粒度、前端运行状态和冲突策略评审。
-4. Task/Handoff、文件、共享记忆和第二 Provider。
-5. 再按 Master PRD 推进诊断、能力缺口、匹配、Agreement、Trial 与插件。
+2. 多 Run 并行前的锁粒度、前端运行状态和冲突策略评审。
+3. Task/Handoff、文件、共享记忆和第二 Provider。
+4. 再按 Master PRD 推进诊断、能力缺口、匹配、Agreement、Trial 与插件。
 
 每次只推进一个可验收切片，不在基础权限未稳定时提前做插件平台。
 

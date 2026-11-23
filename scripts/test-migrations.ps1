@@ -31,12 +31,16 @@ function Assert-Schema {
     $initiatedNullable = Query-Scalar "SELECT is_nullable FROM information_schema.columns WHERE table_name='runs' AND column_name='initiated_by_user_id';"
     $initiatedNullRows = Query-Scalar "SELECT count(*) FROM runs WHERE initiated_by_user_id IS NULL;"
     $initiatedMigration = Query-Scalar "SELECT count(*) FROM schema_migrations WHERE version='008_run_initiated_by';"
-    if ([int]$migrations -lt 8) { throw "expected at least 8 migrations, got $migrations" }
+    $conversationEventsTable = Query-Scalar "SELECT count(*) FROM information_schema.tables WHERE table_name='conversation_events';"
+    $conversationEventsMigration = Query-Scalar "SELECT count(*) FROM schema_migrations WHERE version='009_conversation_events';"
+    if ([int]$migrations -lt 9) { throw "expected at least 9 migrations, got $migrations" }
     if ($projectMigration -ne '1') { throw "007_project_id_required must appear exactly once, got $projectMigration" }
     if ($initiatedNullable -ne 'NO') { throw "runs.initiated_by_user_id must be NOT NULL, got $initiatedNullable" }
     if ($initiatedNullRows -ne '0') { throw "runs.initiated_by_user_id contains $initiatedNullRows NULL rows" }
     if ($initiatedMigration -ne '1') { throw "008_run_initiated_by must appear exactly once, got $initiatedMigration" }
-    return [ordered]@{migrations=[int]$migrations; project_id_nullable=$nullable; null_rows=[int]$nullRows; migration_007=$projectMigration; initiated_by_nullable=$initiatedNullable; initiated_by_null_rows=[int]$initiatedNullRows; migration_008=$initiatedMigration}
+    if ($conversationEventsTable -ne '1') { throw "conversation_events table is missing" }
+    if ($conversationEventsMigration -ne '1') { throw "009_conversation_events must appear exactly once, got $conversationEventsMigration" }
+    return [ordered]@{migrations=[int]$migrations; project_id_nullable=$nullable; null_rows=[int]$nullRows; migration_007=$projectMigration; initiated_by_nullable=$initiatedNullable; initiated_by_null_rows=[int]$initiatedNullRows; migration_008=$initiatedMigration; conversation_events_table=[int]$conversationEventsTable; migration_009=$conversationEventsMigration}
 }
 
 Push-Location $root

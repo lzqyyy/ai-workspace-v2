@@ -97,7 +97,7 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
 (async () => {
   vm.runInContext(`
     state.user = {id:'user-a', display_name:'User A'};
-    state.project = {id:'project-1', name:'Project One'};
+    state.project = {id:'project-1', name:'Project One', status:'active'};
     state.members = [
       {user_id:'user-a', display_name:'User A', role:'viewer'},
       {user_id:'user-b', display_name:'User B', role:'editor'}
@@ -112,6 +112,8 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   assert.strictEqual(elements.get('new-conversation').disabled, true, 'viewer cannot create conversations');
   assert.strictEqual(elements.get('readonly-note').classList.contains('hidden'), false, 'viewer must see readonly note');
   assert.strictEqual(elements.get('show-member-form').classList.contains('hidden'), true, 'viewer cannot manage members');
+  assert.strictEqual(elements.get('audit-section').classList.contains('hidden'), true, 'viewer cannot read project audit');
+  assert.strictEqual(elements.get('archive-project').hidden, true, 'viewer cannot archive project');
 
   vm.runInContext(`
     state.role = 'editor'; state.run = {runId:'other-run', conversationId:'conversation-1', ownerId:'user-b', targetAgentId:'agent-1', lastEventId:0, partial:''};
@@ -122,6 +124,16 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   vm.runInContext("state.role = 'owner'; applyPermissions();", context);
   assert.strictEqual(elements.get('cancel-button').classList.contains('hidden'), false, 'owner can cancel any run');
   assert.strictEqual(elements.get('show-member-form').classList.contains('hidden'), false, 'owner can manage members');
+  assert.strictEqual(elements.get('audit-section').classList.contains('hidden'), false, 'owner can read project audit');
+  assert.strictEqual(elements.get('archive-project').hidden, false, 'owner sees archive action');
+  assert.strictEqual(elements.get('archive-project').disabled, false, 'owner can archive an active project');
+  vm.runInContext("state.project = {id:'project-1', name:'Project One', status:'archived'}; state.run = null; applyPermissions();", context);
+  assert.strictEqual(elements.get('message-input').disabled, true, 'archived project must be read-only');
+  assert.strictEqual(elements.get('new-conversation').disabled, true, 'archived project cannot create conversations');
+  assert.strictEqual(elements.get('archive-project').disabled, true, 'archived project archive action is disabled');
+  assert.strictEqual(elements.get('audit-section').classList.contains('hidden'), false, 'owner retains audit read after archive');
+  assert.strictEqual(elements.get('readonly-note').classList.contains('hidden'), false, 'archived project shows readonly note');
+  vm.runInContext("state.project.status = 'active'; applyPermissions();", context);
 
   vm.runInContext(`
     state.role = 'editor'; state.run = null; state.sending = false; state.targetAgentId = 'agent-1';
@@ -144,7 +156,7 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   assert.strictEqual(context.__beginArgs[0], 'run-1', 'send must start returned run');
 
   vm.runInContext(`
-    state.project = {id:'project-1'}; state.targetAgentId = 'agent-1'; state.conversations = [];
+    state.project = {id:'project-1', status:'active'}; state.targetAgentId = 'agent-1'; state.conversations = [];
     selectConversation = async () => {};
     toast = () => {};
     api = async (path, options) => {
@@ -157,7 +169,7 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   assert.strictEqual(JSON.parse(context.__conversationCapture.options.body).agent_id, 'agent-1');
 
   vm.runInContext(`
-    state.role = 'editor'; state.user = {id:'user-a', display_name:'User A'}; state.project = {id:'project-1'};
+    state.role = 'editor'; state.user = {id:'user-a', display_name:'User A'}; state.project = {id:'project-1', status:'active'};
     state.activeConversation = {id:'conversation-1'}; state.lastRunId = 'run-retry'; state.lastRunOwnerId = 'user-a'; state.retrying = false;
     clearError = () => {}; setError = () => {}; renderMessages = () => {}; beginRun = () => {}; setRunState = () => {}; setSending = () => {};
     __retryCalls = 0; __retryGate = new Promise((resolve) => { __releaseRetry = resolve; });
@@ -172,7 +184,7 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   assert.strictEqual(vm.runInContext('state.retrying', context), false, 'retry flag must reset');
 
   vm.runInContext(`
-    state.project = {id:'project-1', name:'Project One'}; state.conversations = [{id:'conversation-complete'}];
+    state.project = {id:'project-1', name:'Project One', status:'active'}; state.conversations = [{id:'conversation-complete'}];
     state.activeConversation = {id:'conversation-complete'}; state.messages = [{sender_type:'agent', run_id:'run-complete'}];
     state.terminalRuns = new Set(); __beginArgs = null; setRunState = (kind, text) => { __runState = [kind, text]; };
     beginRun = (...args) => { __beginArgs = args; };
@@ -193,9 +205,12 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   vm.runInContext(`
     state.run = null; state.activeConversation = {id:'conversation-shared'};
     state.messages = [{sender_type:'user', sender_id:'user-b', run_id:'run-observed'}]; state.terminalRuns = new Set();
-    beginRun = (...args) => { __observedArgs = args; }; discoverRunFromMessages();
+    beginRun = (...args) => { __observedArgs = args; };
+    api = async (path) => { __observedRunPath = path; return {status:'running', agent_id:'agent-real', initiated_by_user_id:'user-b'}; };
   `, context);
-  assert.deepStrictEqual(Array.from(context.__observedArgs), ['run-observed', 'conversation-shared', 0, '', 'user-b', 'agent-1']);
+  await context.discoverRunFromMessages();
+  assert.strictEqual(context.__observedRunPath, '/api/v1/runs/run-observed', 'fallback discovery must read real Run metadata');
+  assert.deepStrictEqual(Array.from(context.__observedArgs), ['run-observed', 'conversation-shared', 0, '', 'user-b', 'agent-real']);
 
   let eventSourceUrl = '';
   context.EventSource = class {
@@ -213,6 +228,29 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   context.handleRunEvent('message.delta', {data: JSON.stringify({seq: 10, payload: {delta: 'ial'}})}, 'run-running');
   assert.strictEqual(vm.runInContext('state.run.lastEventId', context), 10, 'SSE cursor must advance');
   assert.strictEqual(vm.runInContext('state.run.partial', context), 'partial', 'duplicate SSE events must be deduplicated');
+
+  let conversationSourceUrl = '';
+  context.EventSource = class {
+    constructor(url) { conversationSourceUrl = url; this.readyState = 0; }
+    addEventListener() {}
+    close() {}
+  };
+  vm.runInContext(`
+    localStorage.removeItem('workspace.conversationEventCursor.conversation-events');
+    state.activeConversation = {id:'conversation-events'}; state.conversationEventSource = null; state.conversationEventCursor = 0;
+    state.messages = []; state.run = null; state.terminalRuns = new Set(); __conversationEvents = 0; __conversationArgs = null;
+    renderMessages = () => {}; applyPermissions = () => {}; persistRun = () => {};
+    beginRun = (...args) => { __conversationEvents += 1; __conversationArgs = args; };
+    connectConversationStream();
+  `, context);
+  assert.ok(conversationSourceUrl.includes('/api/v1/conversations/conversation-events/events'), 'Conversation stream URL missing');
+  assert.ok(!conversationSourceUrl.includes('after=0'), 'first connection should start at the server tail');
+  const conversationEvent = JSON.stringify({schema_version:'1.0', conversation_id:'conversation-events', seq:7, type:'run.available', payload:{run_id:'run-event', target_agent_id:'agent-real', initiated_by_user_id:'user-b', status:'queued'}});
+  context.handleConversationEvent({data:conversationEvent}, 'conversation-events');
+  context.handleConversationEvent({data:conversationEvent}, 'conversation-events');
+  assert.strictEqual(vm.runInContext('__conversationEvents', context), 1, 'duplicate Conversation events must be ignored');
+  assert.deepStrictEqual(Array.from(context.__conversationArgs), ['run-event', 'conversation-events', 0, '', 'user-b', 'agent-real']);
+  assert.strictEqual(localStorage.getItem('workspace.conversationEventCursor.conversation-events'), '7');
 
   let pollCallback = null;
   context.setInterval = (callback) => { pollCallback = callback; return 1; };
@@ -239,7 +277,7 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   vm.runInContext(`
     state.run = null;
     state.eventSource = null;
-    state.project = {id:'project-sidebar', name:'Project'};
+    state.project = {id:'project-sidebar', name:'Project', status:'active'};
     state.role = 'owner';
     state.projectAgents = [];
     state.conversations = [{id:'conversation-sidebar', agent_name:'Agent', title:'Sidebar'}];
@@ -258,5 +296,5 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   await context.__sidebarClose;
   assert.strictEqual(sidebarClasses.has('open'), false, 'selecting a conversation must close mobile sidebar');
 
-  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true}));
+  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, conversation_sse:true, conversation_event_real_agent:true, conversation_event_dedupe:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true,audit_owner_ui:true,archive_owner_ui:true,archived_readonly_ui:true}));
 })().catch((error) => { console.error(error); process.exitCode = 1; });

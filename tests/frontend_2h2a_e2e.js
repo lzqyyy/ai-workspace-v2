@@ -108,6 +108,14 @@ class CDP {
     await selectProject(ownerPage,project.id); await selectProject(editorPage,project.id);
     await ownerPage.waitFor(`document.getElementById('conversation-title').textContent === '${conversation.title}'`,25000,'owner shared conversation');
     await editorPage.waitFor(`document.getElementById('conversation-title').textContent === '${conversation.title}'`,25000,'editor shared conversation');
+    const ownerAccessUi=await ownerPage.evaluate(`(()=>({auditHidden:document.getElementById('audit-section').classList.contains('hidden'),archiveHidden:document.getElementById('archive-project').hidden}))()`);
+    const editorAccessUi=await editorPage.evaluate(`(()=>({auditHidden:document.getElementById('audit-section').classList.contains('hidden'),archiveHidden:document.getElementById('archive-project').hidden}))()`);
+    assert.strictEqual(ownerAccessUi.auditHidden,false,'owner must see audit entry'); assert.strictEqual(ownerAccessUi.archiveHidden,false,'owner must see archive entry');
+    assert.strictEqual(editorAccessUi.auditHidden,true,'editor must not see audit entry'); assert.strictEqual(editorAccessUi.archiveHidden,true,'editor must not see archive entry');
+    const conversationEventUrls=(page)=>page.cdp.events.filter((event)=>event.sessionId===page.session&&event.method==='Network.responseReceived'&&String(event.params?.response?.url||'').includes(`/api/v1/conversations/${conversation.id}/events`)).map((event)=>event.params.response.url);
+    for(let i=0;i<40&&(!conversationEventUrls(ownerPage).length||!conversationEventUrls(editorPage).length);i+=1) await sleep(100);
+    assert.ok(conversationEventUrls(ownerPage).length>0,'owner must subscribe to Conversation run.available SSE');
+    assert.ok(conversationEventUrls(editorPage).length>0,'editor must subscribe to Conversation run.available SSE');
 
     await setAgent(ownerPage,ownerAgent.id);
     await ownerPage.waitFor("!document.getElementById('message-input').disabled && !document.getElementById('send-button').disabled",30000,'owner composer ready');
@@ -150,15 +158,15 @@ class CDP {
     await editorPage.waitFor("document.readyState === 'complete'",20000,'viewer reload');
     await editorPage.waitFor("document.getElementById('role-badge').textContent === 'viewer'",25000,'viewer role');
     await editorPage.waitFor("document.getElementById('message-input').disabled && document.getElementById('new-conversation').disabled && !document.getElementById('readonly-note').classList.contains('hidden')",20000,'viewer readonly UI');
-    const viewerControls=await editorPage.evaluate(`(()=>({inputDisabled:document.getElementById('message-input').disabled,sendDisabled:document.getElementById('send-button').disabled,conversationDisabled:document.getElementById('new-conversation').disabled,retryHidden:document.getElementById('retry-button').classList.contains('hidden')}))()`);
-    assert.strictEqual(viewerControls.inputDisabled,true); assert.strictEqual(viewerControls.sendDisabled,true); assert.strictEqual(viewerControls.conversationDisabled,true); assert.strictEqual(viewerControls.retryHidden,true);
+    const viewerControls=await editorPage.evaluate(`(()=>({inputDisabled:document.getElementById('message-input').disabled,sendDisabled:document.getElementById('send-button').disabled,conversationDisabled:document.getElementById('new-conversation').disabled,retryHidden:document.getElementById('retry-button').classList.contains('hidden'),auditHidden:document.getElementById('audit-section').classList.contains('hidden'),archiveHidden:document.getElementById('archive-project').hidden}))()`);
+    assert.strictEqual(viewerControls.inputDisabled,true); assert.strictEqual(viewerControls.sendDisabled,true); assert.strictEqual(viewerControls.conversationDisabled,true); assert.strictEqual(viewerControls.retryHidden,true); assert.strictEqual(viewerControls.auditHidden,true); assert.strictEqual(viewerControls.archiveHidden,true);
     const exceptions=[...ownerPage.cdp.exceptions,...editorPage.cdp.exceptions];
     if(exceptions.length) throw new Error(`Browser runtime exceptions: ${exceptions.join('; ')}`);
 
     fs.mkdirSync(path.dirname(screenshotPath),{recursive:true});
     const screenshot=await editorPage.cdp.send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false},editorPage.session);
     fs.writeFileSync(screenshotPath,Buffer.from(screenshot.data,'base64'));
-    console.log(JSON.stringify({status:'PASS',project_id:project.id,conversation_id:conversation.id,owner_agent:ownerAgent.name,editor_agent:editorAgent.name,owner_sees_shared_history:true,editor_sees_shared_history:true,owner_sse:ownerSseUrls.length>0,editor_sse:editorSseUrls.length>0,viewer_ui_readonly:true,screenshot:screenshotPath}));
+    console.log(JSON.stringify({status:'PASS',project_id:project.id,conversation_id:conversation.id,owner_agent:ownerAgent.name,editor_agent:editorAgent.name,owner_sees_shared_history:true,editor_sees_shared_history:true,owner_conversation_sse:conversationEventUrls(ownerPage).length>0,editor_conversation_sse:conversationEventUrls(editorPage).length>0,owner_sse:ownerSseUrls.length>0,editor_sse:editorSseUrls.length>0,viewer_ui_readonly:true,owner_audit_archive_ui:true,viewer_hidden_sensitive_ui:true,screenshot:screenshotPath}));
   } finally {
     for(const item of launches) try{item.cdp?.close();}catch{}
     await Promise.all(launches.map((item)=>stopBrowser(item.browser)));

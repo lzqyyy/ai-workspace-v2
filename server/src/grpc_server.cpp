@@ -144,7 +144,7 @@ public:
             case aiworkspace::v1::RESOURCE_TYPE_RUN: type = "RUN"; break;
             default: return {grpc::StatusCode::INVALID_ARGUMENT, "VALIDATION_FAILED: unsupported resource type"};
             }
-            auto [allowed, reason] = service_.checkPermission(request->actor_user_id(), type, request->resource_id(), request->action());
+            auto [allowed, reason] = service_.checkPermission(request->actor_user_id(), request->project_id(), type, request->resource_id(), request->action());
             response->set_allowed(allowed); response->set_reason(reason);
             return grpc::Status::OK;
         } catch (const ServiceError& e) { return to_status(e); }

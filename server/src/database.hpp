@@ -2,7 +2,10 @@
 
 #include "common.hpp"
 #include <libpq-fe.h>
+#include <condition_variable>
+#include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -34,10 +37,13 @@ private:
     std::unique_ptr<PGresult, decltype(&PQclear)> result_{nullptr, PQclear};
 };
 
+struct PgPoolState;
+
 class PgSession {
 public:
-    explicit PgSession(const std::string& conninfo);
     ~PgSession();
+    PgSession(PgSession&& other) noexcept;
+    PgSession& operator=(PgSession&& other) noexcept;
     PgSession(const PgSession&) = delete;
     PgSession& operator=(const PgSession&) = delete;
 
@@ -48,12 +54,21 @@ public:
     void exec_script(const std::string& sql);
 
 private:
+    explicit PgSession(PGconn* conn, std::shared_ptr<PgPoolState> pool);
+    void release() noexcept;
+
     PGconn* conn_{nullptr};
+    std::shared_ptr<PgPoolState> pool_;
+    bool in_transaction_{false};
+    bool reusable_{true};
+
+    friend class Database;
 };
 
 class Database {
 public:
-    explicit Database(std::string conninfo);
+    explicit Database(std::string conninfo, int max_connections = 8, int acquire_timeout_ms = 5000,
+                      int connect_timeout_seconds = 5, int idle_validate_seconds = 30);
     PgSession session() const;
     bool healthy() const;
     void applyMigrations(const std::string& directory) const;
@@ -61,6 +76,7 @@ public:
 
 private:
     std::string conninfo_;
+    std::shared_ptr<PgPoolState> pool_;
 };
 
 } // namespace ws

@@ -25,6 +25,7 @@
 - Retry：`Idempotency-Key` 按用户幂等；同一用户重复使用同一 key 返回第一次创建的 retry `run_id`。
 - 最终消息：`(run_id)` partial unique + `ON CONFLICT DO NOTHING`。
 - 终态回调：已终态 Run 对相同 Job/Run 再次 UpdateJobStatus 返回 `accepted=true, duplicate=true`，不新增消息或事件。
+- Conversation 事件：新 Run 的 `run.available` 与 Message/Run/Job 同事务写入；显式游标可回放，缺失游标从当前 tail 开始。
 - Worker 事件：`(run_id, seq)` 唯一；相同内容视为 duplicate，不同内容返回冲突。
 - 事件游标：客户端用 `Last-Event-ID`/`after` 重放，不重复执行模型。
 
@@ -42,3 +43,12 @@
 - 页面刷新从 localStorage 恢复 `run_id + lastEventId + partial content`。
 - 若历史中已有该 Run 的最终消息，则清除暂存，不重复订阅，并显示已完成状态。
 - Retry 请求为前端 single-flight：请求期间禁用重试按钮，避免双击创建多个 Run。
+
+## 6. PostgreSQL 连接池
+
+- 默认 `DB_POOL_SIZE=8`、`DB_ACQUIRE_TIMEOUT_MS=5000`、`DB_CONNECT_TIMEOUT_SECONDS=5`。
+- `PgSession` 从池中借用连接，析构时自动归还；未提交事务先回滚。
+- 连接空闲超过 `DB_IDLE_VALIDATE_SECONDS`（默认 30）时，借出前执行一次 `SELECT 1`；失败则丢弃并重建。
+- 查询失败、迁移失败或连接状态异常时丢弃物理连接，不把失败事务放回池。
+- health 检查也经过同一连接池，确保复用而非旁路新建连接。
+- `scripts/test-pool.ps1 -Docker` 用 256 请求/32 并发验证连接上限和归还状态。

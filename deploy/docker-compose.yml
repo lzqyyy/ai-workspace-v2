@@ -21,7 +21,11 @@ services:
       context: ..
       dockerfile: server/Dockerfile
     environment:
-      DATABASE_URL: host=postgres port=5432 dbname=${POSTGRES_DB:-workspace} user=${POSTGRES_USER:-workspace} password=${POSTGRES_PASSWORD:-workspace_dev_password}
+      DATABASE_URL: host=postgres port=5432 dbname=${POSTGRES_DB:-workspace} user=${POSTGRES_USER:-workspace} password=${POSTGRES_PASSWORD:-workspace_dev_password} connect_timeout=${DB_CONNECT_TIMEOUT_SECONDS:-5}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-8}
+      DB_ACQUIRE_TIMEOUT_MS: ${DB_ACQUIRE_TIMEOUT_MS:-5000}
+      DB_CONNECT_TIMEOUT_SECONDS: ${DB_CONNECT_TIMEOUT_SECONDS:-5}
+      DB_IDLE_VALIDATE_SECONDS: ${DB_IDLE_VALIDATE_SECONDS:-30}
       HTTP_HOST: 0.0.0.0
       HTTP_PORT: 8080
       GRPC_HOST: 0.0.0.0
@@ -38,7 +42,7 @@ services:
       postgres:
         condition: service_healthy
     read_only: true
-    tmpfs: ["/tmp", "/app/uploads"]
+    tmpfs: ["/tmp", "/app/uploads:uid=10001,gid=10001,mode=0770"]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/v1/health"]
       interval: 5s

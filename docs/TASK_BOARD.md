@@ -1,8 +1,8 @@
 # 基础对话平台任务看板
 
 更新时间：2026-11-23
-当前候选版本：V0.2.0（RELEASE REVIEW）
-发布状态：V0.2 多人基线已合并 `main`；`agent/core/conversation-realtime` 增量已推送、待合并；未创建 `V0.2.0` tag
+当前版本：V0.2.0（RELEASE）
+发布状态：已合并 `main` 并推送 `origin`；`v0.2.0` tag 随本次发布创建
 
 ## 当前任务
 
@@ -32,21 +32,22 @@
 | A00 AI 多 Agent 维护契约 | COORD | DONE | `AGENTS.md` V1.1、分支与单写者协议 |
 | A01 GitHub 自动同步 | COORD | DONE | `.agents/skills/github-auto-sync/` |
 | PHASE3-20261113 环境可移植性、生命周期与清理 | CORE/WORKER/QA | DONE | 阶段化启动日志、gRPC Shutdown/join、Docker-first 缓存工具镜像、路径清理；构建/E2E/lease/health PASS |
-| PACKAGE-A-20261116 多人平台基础数据模型与 API 契约 | CORE/COORD | REVIEW | Project/成员/Agent schema、只增迁移、Project-first OpenAPI、契约测试与交接；Docker/PG16/E2E PASS |
-| PACKAGE-B-20261116 Project API 与权限 | CORE | REVIEW | Project/成员/Agent C++ 路由、owner/editor/viewer 授权、最后 owner 与 active Run 移除保护、脱敏审计；Docker-first 全量测试 PASS |
-| PACKAGE-C-20261116 共享 Conversation 与单 active Run 切换 | CORE | REVIEW | 已 rebase 到 Package B；Project-first Conversation、target Agent 发送、Project member Run/SSE 权限、单 active Run 与 2H+2A 测试；Docker-first 全量测试 PASS |
-| PACKAGE-D-20261116 Project-first 多用户前端 | WEB | REVIEW | Project 切换/创建、成员/Agent 管理、共享 Conversation、target Agent 发送、共享 Run SSE、角色交互控制；状态测试与 headless 浏览器 E2E PASS |
-| PACKAGE-E-20261116 2H+2A 验收与稳定性 | QA/CORE | REVIEW | 双浏览器 owner/editor + 两 Agent 同会话、双方 SSE、权限矩阵、并发 409、幂等、迁移重放；Docker-first 全量 PASS |
-| PACKAGE-F-20261116 交付、演示与交接 | QA/COORD | REVIEW | Docker-first demo seed、2H+2A 手工/自动验收入口、健康证据、Runbook、验收记录与最终交接 |
-| HOTFIX-20261116 MVP 合并审查阻塞 | CORE/QA | REVIEW | UUID 严格格式校验、双独立浏览器 2H+2A 竞态修复、Project 归档契约缺口记录；全量/浏览器/health PASS |
+| PACKAGE-A-20261116 多人平台基础数据模型与 API 契约 | CORE/COORD | DONE | Project/成员/Agent schema、只增迁移、Project-first OpenAPI、契约测试与交接；Docker/PG16/E2E PASS |
+| PACKAGE-B-20261116 Project API 与权限 | CORE | DONE | Project/成员/Agent C++ 路由、owner/editor/viewer 授权、最后 owner 与 active Run 移除保护、脱敏审计；Docker-first 全量测试 PASS |
+| PACKAGE-C-20261116 共享 Conversation 与单 active Run 切换 | CORE | DONE | 已 rebase 到 Package B；Project-first Conversation、target Agent 发送、Project member Run/SSE 权限、单 active Run 与 2H+2A 测试；Docker-first 全量测试 PASS |
+| PACKAGE-D-20261116 Project-first 多用户前端 | WEB | DONE | Project 切换/创建、成员/Agent 管理、共享 Conversation、target Agent 发送、共享 Run SSE、角色交互控制；状态测试与 headless 浏览器 E2E PASS |
+| PACKAGE-E-20261116 2H+2A 验收与稳定性 | QA/CORE | DONE | 双浏览器 owner/editor + 两 Agent 同会话、双方 SSE、权限矩阵、并发 409、幂等、迁移重放；Docker-first 全量 PASS |
+| PACKAGE-F-20261116 交付、演示与交接 | QA/COORD | DONE | Docker-first demo seed、2H+2A 手工/自动验收入口、健康证据、Runbook、验收记录与最终交接 |
+| HOTFIX-20261116 MVP 合并审查阻塞 | CORE/QA | DONE | UUID 严格格式校验、双独立浏览器 2H+2A 竞态修复、Project 归档契约缺口记录；全量/浏览器/health PASS |
 | A02 项目级免重复审批 | COORD | DONE | `.agents/skills/project-auto-approval/`、`.codex/config.toml` |
-| HOTFIX-20261117 共享历史轮询竞态 | WEB/QA | REVIEW | 防止较早的慢响应覆盖较新的共享消息快照；修复 Windows 浏览器 profile 清理误报；全量/浏览器 PASS |
-| HOTFIX-20261118 SSE 事件序号与窄屏回归 | CORE/WEB/QA | REVIEW | appendEvent 强制连续序号；跳号/乱序专项 PASS；窄屏侧栏关闭修复；Docker/E2E/Playwright PASS |
-| DOC-20261117 当前事实与交付基线校准 | COORD | REVIEW | 版本/迁移/前端接入/push 状态、归档与幂等边界、UTF-8 长度语义修正；契约与本地验证通过 |
+| HOTFIX-20261117 共享历史轮询竞态 | WEB/QA | DONE | 防止较早的慢响应覆盖较新的共享消息快照；修复 Windows 浏览器 profile 清理误报；全量/浏览器 PASS |
+| HOTFIX-20261118 SSE 事件序号与窄屏回归 | CORE/WEB/QA | DONE | appendEvent 强制连续序号；跳号/乱序专项 PASS；窄屏侧栏关闭修复；Docker/E2E/Playwright PASS |
+| DOC-20261117 当前事实与交付基线校准 | COORD | DONE | 版本/迁移/前端接入/push 状态、归档与幂等边界、UTF-8 长度语义修正；契约与本地验证通过 |
 | IMP-20261119 Run 归属与发送幂等合同 | CORE/COORD | DONE | `client_request_id` 必填、`runs.initiated_by_user_id`、008 迁移、retry/取消权限、OpenAPI 1.0.1；Docker 全量与双浏览器 2H+2A PASS；已合并 `main` |
-| CORE-20261120 Conversation 实时链路 | CORE/WEB/QA | REVIEW | 009 `conversation_events`、Conversation `run.available` SSE/回放、C++ 事务写入、前端真实 target Agent、2.5 秒轮询兜底；专项延迟约 515ms，retry 事件与幂等不重复写入 PASS，Docker/浏览器/health PASS |
-| CORE-20261120 PostgreSQL 连接池 | CORE/QA | REVIEW | 默认 8 连接、5s 获取超时、5s TCP 建连超时、30s 空闲验证、RAII 归还；256 请求/32 并发、PostgreSQL 重启恢复与 connect_timeout PASS |
-| PERM-20261121 Project 权限加固、审计读取与归档 | CORE/WEB/QA | REVIEW | 集中式 role × action、CheckPermission 显式 Project 上下文与 archived 状态、成员移除 Agent 映射清理、owner-only 脱敏审计 API/UI、Q4-B 单向软归档、legacy 归档建会话 409；Docker 全量/API/权限 RPC/浏览器/health PASS |
+| CORE-20261120 Conversation 实时链路 | CORE/WEB/QA | DONE | 009 `conversation_events`、Conversation `run.available` SSE/回放、C++ 事务写入、前端真实 target Agent、2.5 秒轮询兜底；专项延迟约 515ms，retry 事件与幂等不重复写入 PASS，Docker/浏览器/health PASS |
+| CORE-20261120 PostgreSQL 连接池 | CORE/QA | DONE | 默认 8 连接、5s 获取超时、5s TCP 建连超时、30s 空闲验证、RAII 归还；256 请求/32 并发、PostgreSQL 重启恢复与 connect_timeout PASS |
+| PERM-20261121 Project 权限加固、审计读取与归档 | CORE/WEB/QA | DONE | 集中式 role × action、CheckPermission 显式 Project 上下文与 archived 状态、成员移除 Agent 映射清理、owner-only 脱敏审计 API/UI、Q4-B 单向软归档、legacy 归档建会话 409；Docker 全量/API/权限 RPC/浏览器/health PASS |
+| TEST-20261123 实时链路、连接池与运行时审查 | CORE/QA | DONE | 本地工具链全量构建；Conversation/Run SSE、双浏览器 2H+2A、Project 权限/归档、审计参数校验、256/32 连接池压力、迁移重放和 connect_timeout PASS；见 `docs/handoffs/TEST-20261123-runtime-review.md` |
 
 ## Gate 结果
 
@@ -61,11 +62,11 @@
 | 任务 | 建议主责 | 状态 | 说明 |
 |---|---|---|---|
 | L2-01 中心化多用户部署 | QA | TODO | HTTPS、账号管理、Worker 扩容、备份 |
-| L2-02 Project / ProjectMember | CORE | REVIEW | Package A/B/C 完成契约、迁移、成员/Agent 管理、共享 Conversation、Project member 运行权限；D/E 前端与 2H+2A 验收 PASS |
+| L2-02 Project / ProjectMember | CORE | DONE | Package A/B/C 完成契约、迁移、成员/Agent 管理、共享 Conversation、Project member 运行权限；D/E 前端与 2H+2A 验收 PASS |
 | L2-03 私有 Conversation | CORE/WEB | TODO | 共享 Agent、每人独立会话上下文 |
-| L2-04 会话级 SSE | CORE/WEB | REVIEW | Conversation `run.available` + 既有 Run SSE 已实现并通过专项/双浏览器验收；2.5 秒轮询仅作兜底 |
+| L2-04 会话级 SSE | CORE/WEB | DONE | Conversation `run.available` + 既有 Run SSE 已实现并通过专项/双浏览器验收；2.5 秒轮询仅作兜底 |
 | L2-05 Task / Handoff | COORD/CORE | TODO | 第二协作阶段 |
-| L2-06 双 Owner / 双 Agent | COORD | REVIEW | 2H+2A、多 Owner 角色保护、双 Agent 选择与单 active Run 已验收；多 Run 并行后置 |
+| L2-06 双 Owner / 双 Agent | COORD | DONE | 2H+2A、多 Owner 角色保护、双 Agent 选择与单 active Run 已验收；多 Run 并行后置 |
 | L2-07 第二模型 Provider | WORKER | TODO | 保持统一错误模型 |
 | L2-08 锁粒度优化（5B） | CORE/QA | TODO | 同 Project 写吞吐成为瓶颈时，将 Project 行锁收窄为 Conversation 级锁并对 membership/Agent 授权行加共享锁；保持固定锁顺序、active Run 409 和死锁回归；当前 5A 继续使用 |
 

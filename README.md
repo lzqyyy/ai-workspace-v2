@@ -2,7 +2,7 @@
 
 本仓交付当前最小 MVP：两个人类与两个 Agent 在同一 Project、同一共享 Conversation 中协作。浏览器只连接 C++ Core，C++ 是唯一 PostgreSQL 业务写入者，Go Worker 通过 gRPC 领取 Job 并执行 Mock/兼容模型流式调用。
 
-当前状态：`V0.2.0` 发布候选已完成全链路测试并推送；当前分支 `agent/core/conversation-realtime` 待合并 `main`，`V0.2.0` tag 尚未创建。验收事实见 `docs/acceptance/V0.2-multiplayer-mvp.md`。
+当前状态：`V0.2.0` 已合并 `main` 并完成发布门禁；`v0.2.0` tag 随本次发布创建。验收事实见 `docs/acceptance/V0.2-multiplayer-mvp.md`。
 
 ```text
 Browser -> C++ HTTP/SSE :8080 -> PostgreSQL :5432

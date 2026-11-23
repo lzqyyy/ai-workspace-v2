@@ -7,8 +7,8 @@ agent_contract:
   repository_root: git rev-parse --show-toplevel
   canonical_branch: main
   remote: origin
-  current_release: v0.1.0
-  current_candidate: "V0.2.0 release review; baseline merged, conversation-realtime increment not yet merged"
+  current_release: v0.2.0
+  current_candidate: "none; V0.2.0 released"
   current_scope: L0 + L1 + minimal multiplayer MVP (Project/ProjectMember/shared Conversation/2H+2A)
   auto_sync_skill: .agents/skills/github-auto-sync/SKILL.md
   auto_approval_skill: .agents/skills/project-auto-approval/SKILL.md

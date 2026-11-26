@@ -2,7 +2,7 @@
 
 - 状态：DONE
 - 主责 Agent：CORE/WEB/QA
-- 分支 / 提交：`agent/core/mvp-closeout-query-integrity` / 本任务同步提交
+- 分支 / 提交：`agent/core/mvp-closeout-query-integrity` / `a10af6d`
 - 开始时间：2026-11-26
 - 完成时间：2026-11-26
 

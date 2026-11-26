@@ -379,6 +379,13 @@ void Api::registerRoutes()
 void Api::registerRunRoutes()
 {
     auto& app = drogon::app();
+    app.registerHandler("/api/v1/runs/{1}", [this](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb, const std::string& runId) {
+        const std::string run_id = runId;
+        run_json(req, cb, true, [this, run_id](const AuthSession& s, const std::string& rid) {
+            return service_.getRun(s.user_id, run_id, rid);
+        });
+    }, {Get});
+
     app.registerHandler("/api/v1/runs/{1}/cancel", [this](const HttpRequestPtr& req, std::function<void(const HttpResponsePtr&)>&& cb, const std::string& runId) {
         const std::string run_id = runId;
         run_json(req, cb, true, [this, req, run_id](const AuthSession& s, const std::string& rid) {

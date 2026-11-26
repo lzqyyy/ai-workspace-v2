@@ -1,6 +1,6 @@
 # 基础对话平台任务看板
 
-更新时间：2026-11-23
+更新时间：2026-11-26
 当前版本：V0.2.0（RELEASE）
 发布状态：已合并 `main` 并推送 `origin`；`v0.2.0` tag 与 GitHub Release 已发布：https://github.com/lzqyyy/ai-workspace-v2/releases/tag/v0.2.0
 
@@ -50,6 +50,7 @@
 | TEST-20261123 实时链路、连接池与运行时审查 | CORE/QA | DONE | 本地工具链全量构建；Conversation/Run SSE、双浏览器 2H+2A、Project 权限/归档、审计参数校验、256/32 连接池压力、迁移重放和 connect_timeout PASS；见 `docs/handoffs/TEST-20261123-runtime-review.md` |
 | D13-20261125 Agent 归属与不可信输入 | CORE/WORKER/QA | DONE | Permission RPC Run 发起者校验、Worker 归属上下文、消息不可信输入边界、跨项目/提示注入专项；Docker 全量 PASS；见 `docs/handoffs/D13-20261125-agent-attribution-untrusted.md` |
 | T0-20261126 实时状态与 gap 恢复 | WEB/QA | DONE | S1+P0+T0：原生 JS 最小 store/reducer、Run/Conversation seq gap 快照恢复、重复事件去重；Docker 全量、前端状态和双浏览器 2H+2A PASS；见 `docs/handoffs/T0-20261126-realtime-state-gap.md` |
+| MVP-CLOSEOUT-20261126 Run Owner 与 retry 目标 | CORE/WEB/QA | DONE | Run 响应增加推导 `agent_owner_id`；新增 GET Run；发送/retry 响应返回真实 `target_agent_id`；前端 retry 使用服务端目标 Agent；Docker 全量 PASS；见 `docs/handoffs/MVP-CLOSEOUT-20261126-run-owner-retry.md` |
 
 ## Gate 结果
 

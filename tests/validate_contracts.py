@@ -66,7 +66,7 @@ EXPECTED_CONVERSATION_EVENTS = {"run.available"}
 def main() -> int:
     api = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
     assert api["openapi"] == "3.1.0"
-    assert api["info"]["version"] == "1.2.0"
+    assert api["info"]["version"] == "1.3.0"
 
     operations = {
         (path, method)
@@ -135,6 +135,7 @@ def main() -> int:
 
     run_schema = schemas["Run"]
     assert run_schema["properties"]["agent_id"]["format"] == "uuid", "Run.agent_id must be a UUID"
+    assert run_schema["properties"]["agent_owner_id"]["format"] == "uuid", "Run.agent_owner_id must be a UUID"
     assert run_schema["properties"]["initiated_by_user_id"]["format"] == "uuid", "Run.initiated_by_user_id must be a UUID"
     conversation_event = schemas["ConversationEvent"]
     assert conversation_event["properties"]["conversation_id"]["format"] == "uuid"
@@ -143,6 +144,8 @@ def main() -> int:
     assert {"run_id", "target_agent_id", "initiated_by_user_id", "status"} <= event_payload_required
     run_statuses = set(schemas["Run"]["properties"]["status"]["enum"])
     send_statuses = set(schemas["SendMessageResponse"]["properties"]["status"]["enum"])
+    assert schemas["SendMessageResponse"]["properties"]["target_agent_id"]["format"] == "uuid", "send/retry target_agent_id must be a UUID"
+    assert "target_agent_id" in schemas["SendMessageResponse"].get("required", []), "send/retry target_agent_id must be required"
     assert send_statuses == run_statuses, f"send/retry status mismatch: {send_statuses} != {run_statuses}"
 
     api_error_codes = set(schemas["Error"]["properties"]["code"]["enum"])

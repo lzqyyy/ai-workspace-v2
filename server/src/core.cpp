@@ -28,7 +28,8 @@ Json run_json(PgResult& r, int row)
         {"created_at", r.get(row, 5)},
         {"started_at", r.is_null(row, 6) ? Json(nullptr) : Json(r.get(row, 6))},
         {"finished_at", r.is_null(row, 7) ? Json(nullptr) : Json(r.get(row, 7))},
-        {"agent_id", r.get(row, 8)}, {"initiated_by_user_id", r.get(row, 9)}};
+        {"agent_id", r.get(row, 8)}, {"agent_owner_id", r.get(row, 9)},
+        {"initiated_by_user_id", r.get(row, 10)}};
 }
 
 const char* kRunColumns =
@@ -36,7 +37,8 @@ const char* kRunColumns =
     "to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'), "
     "CASE WHEN r.started_at IS NULL THEN NULL ELSE to_char(r.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') END, "
     "CASE WHEN r.finished_at IS NULL THEN NULL ELSE to_char(r.finished_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') END, "
-    "r.agent_id::text, r.initiated_by_user_id::text";
+    "r.agent_id::text, (SELECT a.owner_id::text FROM agents a WHERE a.id=r.agent_id), "
+    "r.initiated_by_user_id::text";
 
 const char* kProjectColumns =
     "p.id::text, p.name, p.description, p.status, p.created_by_user_id::text, "
@@ -884,12 +886,12 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
     s.begin();
     try {
         const std::string duplicate_sql = std::string("SELECT ") + kMessageColumns +
-            ",r.id::text,r.status FROM messages m JOIN runs r ON r.id=m.run_id "
+            ",r.id::text,r.status,r.agent_id::text FROM messages m JOIN runs r ON r.id=m.run_id "
             "WHERE m.conversation_id=$1 AND m.sender_id=$2 AND m.client_request_id=$3 "
             "AND m.sender_type='user' LIMIT 1";
         auto duplicate_json = [](PgResult& existing) {
             return Json{{"message", message_json(existing, 0)}, {"run_id", existing.get(0, 10)},
-                        {"status", existing.get(0, 11)},
+                        {"status", existing.get(0, 11)}, {"target_agent_id", existing.get(0, 12)},
                         {"events_url", "/api/v1/runs/" + existing.get(0, 10) + "/events"},
                         {"duplicate", true}};
         };
@@ -964,6 +966,7 @@ Json CoreService::sendMessage(const std::string& user_id, const std::string& con
         Json message = message_json(msg, 0);
         message["run_id"] = run_id;
         return {{"message", message}, {"run_id", run_id}, {"status", "queued"},
+                {"target_agent_id", target_agent_id},
                 {"events_url", "/api/v1/runs/" + run_id + "/events"}, {"duplicate", false}};
     } catch (...) {
         s.rollback();
@@ -1016,7 +1019,7 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
 
         auto duplicate_response = [&](PgSession& session) {
             auto existing = session.query(
-                "SELECT r.id::text,r.status,r.trigger_message_id::text FROM retry_idempotency i "
+                "SELECT r.id::text,r.status,r.trigger_message_id::text,r.agent_id::text FROM retry_idempotency i "
                 "JOIN runs r ON r.id=i.run_id "
                 "WHERE i.user_id=$1 AND i.operation='retry_run' AND i.key=$2",
                 {user_id, idempotency_key});
@@ -1030,6 +1033,7 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
             Json message = message_json(msg, 0);
             message["run_id"] = existing.get(0, 0);
             return Json{{"message", message}, {"run_id", existing.get(0, 0)}, {"status", existing.get(0, 1)},
+                        {"target_agent_id", existing.get(0, 3)},
                         {"events_url", "/api/v1/runs/" + existing.get(0, 0) + "/events"},
                         {"duplicate", true}};
         };
@@ -1084,6 +1088,7 @@ Json CoreService::retryRun(const std::string& user_id, const std::string& run_id
         Json message = message_json(msg, 0);
         message["run_id"] = new_run_id;
         return {{"message", message}, {"run_id", new_run_id}, {"status", "queued"},
+                {"target_agent_id", old.get(0, 0)},
                 {"events_url", "/api/v1/runs/" + new_run_id + "/events"}, {"duplicate", false}};
     } catch (...) {
         s.rollback();
@@ -1115,14 +1120,14 @@ Json CoreService::cancelRun(const std::string& user_id, const std::string& run_i
             {run_id, project_id});
         if (r.rows() != 1)
             throw ServiceError(403, "FORBIDDEN", "run is not accessible");
-        if (role == "editor" && r.get(0, 11) != user_id) {
+        if (role == "editor" && r.get(0, 12) != user_id) {
             auditDenied(user_id, "run.cancel", project_id, request_id, role);
             throw ServiceError(403, "FORBIDDEN", "editors may only cancel their own runs");
         }
         const std::string status = r.get(0, 2);
         if (status == "succeeded" || status == "failed" || status == "cancelled")
             throw ServiceError(409, "RUN_NOT_CANCELLABLE", "run is already terminal");
-        if (r.get(0, 10) == "queued") {
+        if (r.get(0, 11) == "queued") {
             const std::string next_seq = std::to_string(std::stoll(s.query(
                 "SELECT COALESCE(MAX(seq),0)+1 FROM run_events WHERE run_id=$1", {run_id}).get(0, 0)));
             s.query("UPDATE jobs SET status='cancelled',lease_token=NULL,lease_until=NULL,updated_at=now() "

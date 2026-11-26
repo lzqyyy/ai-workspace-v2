@@ -430,7 +430,7 @@ async function sendMessage(event) {
     els.messageInput.value = ''; els.messageInput.style.height = 'auto';
     dispatch({type:'messages.upsert', message:response.message});
     renderMessages(); state.lastRunOwnerId = state.user.id;
-    beginRun(response.run_id, state.activeConversation.id, 0, '', state.user.id, state.targetAgentId);
+    beginRun(response.run_id, state.activeConversation.id, 0, '', state.user.id, response.target_agent_id || state.targetAgentId);
   } catch (error) {
     state.sending = false; setRunState('error', error.status === 409 ? '运行冲突' : '创建失败');
     setError(error.status === 409 ? '当前共享会话已有运行中的任务，请等待完成后再发送。' : error.message, error.retryable);
@@ -472,7 +472,7 @@ async function retryRun() {
     const response = await api(`/api/v1/runs/${encodeURIComponent(state.lastRunId)}/retry`, {method: 'POST', headers: {'Idempotency-Key': `retry-${uuid()}`}});
     dispatch({type:'messages.upsert', message:response.message});
     renderMessages(); state.lastRunOwnerId = state.user.id;
-    beginRun(response.run_id, state.activeConversation.id, 0, '', state.user.id, response.message?.target_agent_id || response.target_agent_id || state.targetAgentId);
+    beginRun(response.run_id, state.activeConversation.id, 0, '', state.user.id, response.target_agent_id || response.message?.target_agent_id || state.targetAgentId);
   } catch (error) { state.sending = false; setRunState('error', '重试失败'); setError(error.message, error.retryable); }
   finally { state.retrying = false; if (!state.run) setSending(false); }
 }

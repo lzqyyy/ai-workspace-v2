@@ -202,6 +202,24 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   assert.strictEqual(vm.runInContext('state.retrying', context), false, 'retry flag must reset');
 
   vm.runInContext(`
+    state.role = 'editor'; state.user = {id:'user-a', display_name:'User A'};
+    state.project = {id:'project-1', status:'active'}; state.activeConversation = {id:'conversation-1'};
+    state.lastRunId = 'run-retry'; state.lastRunOwnerId = 'user-a'; state.retrying = false; state.sending = false;
+    state.targetAgentId = 'agent-current'; state.messages = [];
+    clearError = () => {}; setError = () => {}; renderMessages = () => {}; setRunState = () => {}; setSending = () => {};
+    beginRun = (...args) => { __retryTargetArgs = args; };
+    api = async () => ({
+      run_id: 'run-retry-new',
+      status: 'queued',
+      target_agent_id: 'agent-old',
+      duplicate: false,
+      message: {id:'message-retry', sender_type:'user', content:'retry'},
+    });
+  `, context);
+  await context.retryRun();
+  assert.strictEqual(context.__retryTargetArgs[5], 'agent-old', 'retry must use the target Agent returned by the server');
+
+  vm.runInContext(`
     state.project = {id:'project-1', name:'Project One', status:'active'}; state.conversations = [{id:'conversation-complete'}];
     state.activeConversation = {id:'conversation-complete'}; state.messages = [{sender_type:'agent', run_id:'run-complete'}];
     state.terminalRuns = new Set(); __beginArgs = null; setRunState = (kind, text) => { __runState = [kind, text]; };
@@ -369,5 +387,5 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   await context.__sidebarClose;
   assert.strictEqual(sidebarClasses.has('open'), false, 'selecting a conversation must close mobile sidebar');
 
-  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, store_reducer:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, conversation_sse:true, conversation_event_real_agent:true, conversation_event_dedupe:true, run_gap_snapshot:true, conversation_gap_snapshot:true, background_run_isolation:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true,audit_owner_ui:true,archive_owner_ui:true,archived_readonly_ui:true}));
+  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, store_reducer:true, retry_dedupe:true, retry_target_agent:true, refresh_restore:true, shared_run_discovery:true, conversation_sse:true, conversation_event_real_agent:true, conversation_event_dedupe:true, run_gap_snapshot:true, conversation_gap_snapshot:true, background_run_isolation:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true,audit_owner_ui:true,archive_owner_ui:true,archived_readonly_ui:true}));
 })().catch((error) => { console.error(error); process.exitCode = 1; });

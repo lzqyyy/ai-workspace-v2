@@ -131,6 +131,11 @@ def main() -> int:
     shared_request_id = f"shared-request-{uuid.uuid4()}"
     owner_send = send(owner, conversation_id, owner_agent["id"], "A sends to owner agent", shared_request_id)
     owner_run = owner_send["run_id"]
+    assert owner_send["target_agent_id"] == owner_agent["id"], owner_send
+    owner_run_detail = owner.request("GET", f"/api/v1/runs/{owner_run}")
+    assert owner_run_detail["agent_id"] == owner_agent["id"], owner_run_detail
+    assert owner_run_detail["agent_owner_id"] == owner_user["id"], owner_run_detail
+    assert owner_run_detail["initiated_by_user_id"] == owner_user["id"], owner_run_detail
     owner_events = owner.events(owner_run)
     editor_events = editor.events(owner_run)
     assert_event_contract(owner_events)
@@ -148,6 +153,9 @@ def main() -> int:
     editor_run = editor_send["run_id"]
     assert editor_run != owner_run
     assert editor_send["duplicate"] is False
+    assert editor_send["target_agent_id"] == editor_agent["id"], editor_send
+    editor_run_detail = editor.request("GET", f"/api/v1/runs/{editor_run}")
+    assert editor_run_detail["agent_owner_id"] == editor_user["id"], editor_run_detail
     owner_events = owner.events(editor_run)
     editor_events = editor.events(editor_run)
     assert_event_contract(owner_events)
@@ -210,6 +218,7 @@ def main() -> int:
         f"/api/v1/runs/{cancel_run}/retry",
         headers={"Idempotency-Key": f"shared-owner-retry-{uuid.uuid4()}"},
     )
+    assert owner_retry["target_agent_id"] == editor_agent["id"], owner_retry
     owner_retry_events = owner.events(owner_retry["run_id"])
     assert_event_contract(owner_retry_events)
     expect_error(editor, "POST", f"/api/v1/runs/{owner_retry['run_id']}/cancel", 403, "FORBIDDEN", None)
@@ -219,6 +228,7 @@ def main() -> int:
         f"/api/v1/runs/{cancel_run}/retry",
         headers={"Idempotency-Key": f"shared-editor-retry-{uuid.uuid4()}"},
     )
+    assert editor_retry["target_agent_id"] == editor_agent["id"], editor_retry
     editor_retry_events = editor.events(editor_retry["run_id"])
     assert_event_contract(editor_retry_events)
 
@@ -250,6 +260,8 @@ def main() -> int:
     )
     viewer_messages = editor.request("GET", f"/api/v1/conversations/{conversation_id}/messages")["items"]
     assert viewer_messages
+    viewer_run_detail = editor.request("GET", f"/api/v1/runs/{owner_run}")
+    assert viewer_run_detail["agent_owner_id"] == owner_user["id"], viewer_run_detail
     viewer_events = editor.events(owner_run)
     assert_event_contract(viewer_events)
     expect_error(
@@ -272,6 +284,7 @@ def main() -> int:
     remove_event = next(item for item in member_remove_audit if item["action"] == "project.member.remove")
     assert remove_event["metadata"].get("removed_agent_count", 0) >= 1, remove_event
     expect_error(editor, "GET", f"/api/v1/conversations/{conversation_id}/messages", 403, "FORBIDDEN", None)
+    expect_error(editor, "GET", f"/api/v1/runs/{owner_run}", 403, "FORBIDDEN", None)
     expect_error(
         editor,
         "GET",

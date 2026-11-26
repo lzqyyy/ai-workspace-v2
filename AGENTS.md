@@ -81,6 +81,8 @@ agent_contract:
 - C++ 连接池默认上限 8、获取超时 5000ms、TCP 建连超时 5s、空闲验证 30s；事务未提交会话归还前会回滚，失效连接不回到池。
 - Conversation 事件与 Run SSE 使用同一 Project membership 授权边界；viewer 可订阅，非成员 403。
 - 集中式 role × action 矩阵同时服务 REST 授权与 gRPC `CheckPermission`；Agent 权限判断显式要求匹配 `project_id`。
+- `CheckPermission` 的 Run cancel/retry 同时校验 `runs.initiated_by_user_id`；Execution Context 携带 `project_id`、`agent_owner_id`、`initiated_by_user_id`。
+- 会话消息视为不可信数据；Worker 不得让消息内容改变授权、Project 范围或工具能力。
 - Project 归档为单向软关闭：owner-only、active Run 时 409、归档后读取保留而写操作 409；成员移除会在同一事务清理其 Project Agent 映射并保留历史。
 - 前端按钮状态只用于交互，服务端始终是唯一授权依据。
 

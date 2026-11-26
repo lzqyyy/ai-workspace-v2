@@ -39,4 +39,7 @@
 - Project 归档已按 Q4-B 实现为 `POST /api/v1/projects/{project_id}/archive`：owner-only、active Run 时 409、成功后软关闭并保持历史只读；本版没有取消归档。
 - 归档后读取 Project/成员/Agent/Conversation/Message/Run/SSE 仍按成员权限工作；新建 Conversation（含 legacy `/api/v1/conversations` 兼容路径）、发送消息、添加/移除 Agent、添加/移除/修改成员、发起/重试 Run 返回 409。
 - `PermissionService.CheckPermission` 对 archived Project 的读 actions 保持允许，状态变更 actions 返回 denied；不只看 membership/role。
+- `PermissionService.CheckPermission` 对 Run 的 `run.cancel` / `run.retry` 同时校验 `runs.initiated_by_user_id`：Project owner 可操作任意 Run，editor 只能操作自己发起的 Run。
+- `GetExecutionContextResponse` 携带 `project_id`、`agent_owner_id`、`initiated_by_user_id`，Worker 对缺失归属信息的上下文 fail closed；Worker 仍不直接鉴权用户、不连接 PostgreSQL。
+- 会话中的用户消息和其他 Agent 消息统一视为不可信数据；它们不能改变系统指令、Project 范围、角色或工具权限。当前 MVP 不向模型暴露项目数据工具，跨 Project Agent 执行由 C++ 服务端拒绝。
 - 生产必须在 HTTPS 反向代理后运行。

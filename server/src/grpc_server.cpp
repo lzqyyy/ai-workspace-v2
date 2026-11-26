@@ -101,6 +101,8 @@ public:
             response->set_model_name(result.value("model_name", "")); response->set_base_url(result.value("base_url", ""));
             response->set_secret_ref(result.value("secret_ref", "")); response->set_next_event_seq(result.value("next_event_seq", 1LL));
             response->set_lease_expires_at_unix_ms(result.value("lease_expires_at_unix_ms", 0LL));
+            response->set_project_id(result.value("project_id", "")); response->set_agent_owner_id(result.value("agent_owner_id", ""));
+            response->set_initiated_by_user_id(result.value("initiated_by_user_id", ""));
             for (const auto& item : result["messages"]) {
                 auto* message = response->add_messages();
                 message->set_message_id(item.value("message_id", "")); message->set_role(item.value("role", ""));

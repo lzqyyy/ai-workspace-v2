@@ -12,11 +12,13 @@ import (
 )
 
 type checkCase struct {
-    name    string
-    actor   string
-    project string
-    action  string
-    allowed bool
+    name         string
+    actor        string
+    project      string
+    resourceType pb.ResourceType
+    resourceID   string
+    action       string
+    allowed      bool
 }
 
 func main() {
@@ -27,6 +29,7 @@ func main() {
     values := map[string]string{
         "owner": "", "editor": "", "agent": "",
         "editor_project": "", "viewer_project": "", "agentless_project": "", "archived_project": "",
+        "fixture_project": "", "owner_run": "", "editor_run": "",
     }
     for name := range values {
         key := "PERMISSION_" + upper(name)
@@ -43,14 +46,18 @@ func main() {
     defer conn.Close()
     client := pb.NewPermissionServiceClient(conn)
     cases := []checkCase{
-        {"owner read", values["owner"], values["editor_project"], "agent.read", true},
-        {"editor use", values["editor"], values["editor_project"], "agent.use", true},
-        {"viewer read", values["editor"], values["viewer_project"], "agent.read", true},
-        {"viewer cannot use", values["editor"], values["viewer_project"], "agent.use", false},
-        {"agent outside project", values["editor"], values["agentless_project"], "agent.read", false},
-        {"archived read", values["owner"], values["archived_project"], "agent.read", true},
-        {"archived cannot use", values["owner"], values["archived_project"], "agent.use", false},
-        {"unknown action denied", values["owner"], values["editor_project"], "admin.everything", false},
+        {"owner read", values["owner"], values["editor_project"], pb.ResourceType_RESOURCE_TYPE_AGENT, values["agent"], "agent.read", true},
+        {"editor use", values["editor"], values["editor_project"], pb.ResourceType_RESOURCE_TYPE_AGENT, values["agent"], "agent.use", true},
+        {"viewer read", values["editor"], values["viewer_project"], pb.ResourceType_RESOURCE_TYPE_AGENT, values["agent"], "agent.read", true},
+        {"viewer cannot use", values["editor"], values["viewer_project"], pb.ResourceType_RESOURCE_TYPE_AGENT, values["agent"], "agent.use", false},
+        {"agent outside project", values["editor"], values["agentless_project"], pb.ResourceType_RESOURCE_TYPE_AGENT, values["agent"], "agent.read", false},
+        {"archived read", values["owner"], values["archived_project"], pb.ResourceType_RESOURCE_TYPE_AGENT, values["agent"], "agent.read", true},
+        {"archived cannot use", values["owner"], values["archived_project"], pb.ResourceType_RESOURCE_TYPE_AGENT, values["agent"], "agent.use", false},
+        {"unknown action denied", values["owner"], values["editor_project"], pb.ResourceType_RESOURCE_TYPE_AGENT, values["agent"], "admin.everything", false},
+        {"editor cancel own run", values["editor"], values["fixture_project"], pb.ResourceType_RESOURCE_TYPE_RUN, values["editor_run"], "run.cancel", true},
+        {"editor cancel other run", values["editor"], values["fixture_project"], pb.ResourceType_RESOURCE_TYPE_RUN, values["owner_run"], "run.cancel", false},
+        {"editor retry other run", values["editor"], values["fixture_project"], pb.ResourceType_RESOURCE_TYPE_RUN, values["owner_run"], "run.retry", false},
+        {"owner cancel other run", values["owner"], values["fixture_project"], pb.ResourceType_RESOURCE_TYPE_RUN, values["editor_run"], "run.cancel", true},
     }
     for _, tc := range cases {
         ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -58,8 +65,8 @@ func main() {
             Meta:         &pb.RequestMeta{RequestId: "permission-rpc-" + tc.name},
             ActorUserId:  tc.actor,
             ProjectId:    tc.project,
-            ResourceType: pb.ResourceType_RESOURCE_TYPE_AGENT,
-            ResourceId:   values["agent"],
+            ResourceType: tc.resourceType,
+            ResourceId:   tc.resourceID,
             Action:       tc.action,
         })
         cancel()
@@ -70,7 +77,7 @@ func main() {
             panic(fmt.Sprintf("%s: allowed=%v want=%v reason=%s", tc.name, response.Allowed, tc.allowed, response.Reason))
         }
     }
-    fmt.Println(`{"status":"PASS","action_aware":true,"agent_project_context":true,"archived_state_enforced":true}`)
+    fmt.Println(`{"status":"PASS","action_aware":true,"agent_project_context":true,"archived_state_enforced":true,"run_initiator_enforced":true}`)
 }
 
 func upper(value string) string {

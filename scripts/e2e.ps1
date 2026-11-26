@@ -53,11 +53,15 @@ if ($Docker) {
         $fixtureMessage = '00000000-0000-4000-8000-000000000501'
         $fixtureRun = '00000000-0000-4000-8000-000000000601'
         $fixtureJob = '00000000-0000-4000-8000-000000000701'
+        $fixtureOwnerConversation = '00000000-0000-4000-8000-000000000402'
+        $fixtureOwnerMessage = '00000000-0000-4000-8000-000000000502'
+        $fixtureOwnerRun = '00000000-0000-4000-8000-000000000602'
+        $fixtureOwnerJob = '00000000-0000-4000-8000-000000000702'
         $cleanupSql = @"
 BEGIN;
-DELETE FROM runs WHERE conversation_id='$fixtureConversation';
-DELETE FROM messages WHERE conversation_id='$fixtureConversation';
-DELETE FROM conversations WHERE id='$fixtureConversation';
+DELETE FROM runs WHERE conversation_id IN ('$fixtureConversation','$fixtureOwnerConversation');
+DELETE FROM messages WHERE conversation_id IN ('$fixtureConversation','$fixtureOwnerConversation');
+DELETE FROM conversations WHERE id IN ('$fixtureConversation','$fixtureOwnerConversation');
 DELETE FROM project_agents WHERE project_id IN ('$fixtureProject','$permissionEditorProject','$permissionViewerProject','$permissionAgentlessProject','$permissionArchivedProject');
 DELETE FROM project_members WHERE project_id IN ('$fixtureProject','$permissionEditorProject','$permissionViewerProject','$permissionAgentlessProject','$permissionArchivedProject');
 DELETE FROM projects WHERE id IN ('$fixtureProject','$permissionEditorProject','$permissionViewerProject','$permissionAgentlessProject','$permissionArchivedProject');
@@ -88,19 +92,38 @@ VALUES ('$fixtureProject','00000000-0000-4000-8000-000000000201','00000000-0000-
 ('$permissionViewerProject','00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000101'),
 ('$permissionArchivedProject','00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000101');
 INSERT INTO conversations(id,owner_id,agent_id,project_id,title,status)
-VALUES ('$fixtureConversation','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000201','$fixtureProject','Package B guard conversation','active');
+VALUES ('$fixtureConversation','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000201','$fixtureProject','Package B editor guard conversation','active'),
+('$fixtureOwnerConversation','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000201','$fixtureProject','Package B owner guard conversation','active');
 INSERT INTO messages(id,conversation_id,sender_type,sender_id,role,content,status)
-VALUES ('$fixtureMessage','$fixtureConversation','user','00000000-0000-4000-8000-000000000102','user','fixture trigger','completed');
+VALUES ('$fixtureMessage','$fixtureConversation','user','00000000-0000-4000-8000-000000000102','user','editor fixture trigger','completed'),
+('$fixtureOwnerMessage','$fixtureOwnerConversation','user','00000000-0000-4000-8000-000000000101','user','owner fixture trigger','completed');
 INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status,initiated_by_user_id)
-VALUES ('$fixtureRun','$fixtureConversation','00000000-0000-4000-8000-000000000201','$fixtureMessage','00000000-0000-4000-8000-000000000001','queued','00000000-0000-4000-8000-000000000102');
+VALUES ('$fixtureRun','$fixtureConversation','00000000-0000-4000-8000-000000000201','$fixtureMessage','00000000-0000-4000-8000-000000000001','queued','00000000-0000-4000-8000-000000000102'),
+('$fixtureOwnerRun','$fixtureOwnerConversation','00000000-0000-4000-8000-000000000201','$fixtureOwnerMessage','00000000-0000-4000-8000-000000000001','cancelled','00000000-0000-4000-8000-000000000101');
 -- Keep the worker from claiming the fixture; the Run itself remains active for the removal guard.
-INSERT INTO jobs(id,run_id,status) VALUES ('$fixtureJob','$fixtureRun','queued');
+INSERT INTO jobs(id,run_id,status) VALUES ('$fixtureJob','$fixtureRun','queued'),
+('$fixtureOwnerJob','$fixtureOwnerRun','cancelled');
 COMMIT;
 "@
         Invoke-Compose @('stop', 'worker')
         try {
             Invoke-ProjectSql $cleanupSql
             Invoke-ProjectSql $seedSql
+
+            & docker run --rm --network $network -v "${root}:/src" -v ai-workspace-v2-go-mod:/go/pkg/mod -w /src `
+                -e GOTOOLCHAIN=local -e GRPC_ADDR=core:50051 `
+                -e PERMISSION_OWNER=00000000-0000-4000-8000-000000000101 `
+                -e PERMISSION_EDITOR=00000000-0000-4000-8000-000000000102 `
+                -e PERMISSION_AGENT=00000000-0000-4000-8000-000000000201 `
+                -e PERMISSION_EDITOR_PROJECT=$permissionEditorProject `
+                -e PERMISSION_VIEWER_PROJECT=$permissionViewerProject `
+                -e PERMISSION_AGENTLESS_PROJECT=$permissionAgentlessProject `
+                -e PERMISSION_ARCHIVED_PROJECT=$permissionArchivedProject `
+                -e PERMISSION_FIXTURE_PROJECT=$fixtureProject `
+                -e PERMISSION_OWNER_RUN=$fixtureOwnerRun `
+                -e PERMISSION_EDITOR_RUN=$fixtureRun `
+                golang:1.25-bookworm go run -buildvcs=false ./tests/permission_rpc
+            if ($LASTEXITCODE -ne 0) { throw 'Docker Permission RPC E2E failed' }
 
             & docker run --rm --network $network -v "${root}:/src" -w /src `
                 -e BASE_URL=http://core:8080 `
@@ -112,18 +135,6 @@ COMMIT;
                 -e PROJECT_TEST_REPORT=/src/build/project-api-report.json `
                 python:3.12-slim python tests/project_api.py
             if ($LASTEXITCODE -ne 0) { throw 'Docker Project API E2E failed' }
-
-            & docker run --rm --network $network -v "${root}:/src" -v ai-workspace-v2-go-mod:/go/pkg/mod -w /src `
-                -e GOTOOLCHAIN=local -e GRPC_ADDR=core:50051 `
-                -e PERMISSION_OWNER=00000000-0000-4000-8000-000000000101 `
-                -e PERMISSION_EDITOR=00000000-0000-4000-8000-000000000102 `
-                -e PERMISSION_AGENT=00000000-0000-4000-8000-000000000201 `
-                -e PERMISSION_EDITOR_PROJECT=$permissionEditorProject `
-                -e PERMISSION_VIEWER_PROJECT=$permissionViewerProject `
-                -e PERMISSION_AGENTLESS_PROJECT=$permissionAgentlessProject `
-                -e PERMISSION_ARCHIVED_PROJECT=$permissionArchivedProject `
-                golang:1.25-bookworm go run -buildvcs=false ./tests/permission_rpc
-            if ($LASTEXITCODE -ne 0) { throw 'Docker Permission RPC E2E failed' }
 
             $report = Get-Content -LiteralPath (Join-Path $root 'build\project-api-report.json') -Raw | ConvertFrom-Json
             if ($report.status -ne 'PASS' -or !$report.active_run_removal_guard -or !$report.archive_owner_only -or !$report.archived_readonly -or !$report.archive_audit) { throw 'Project API report did not confirm permission/archive guards' }
@@ -208,6 +219,10 @@ try {
         $fixtureMessage = '00000000-0000-4000-8000-000000000501'
         $fixtureRun = '00000000-0000-4000-8000-000000000601'
         $fixtureJob = '00000000-0000-4000-8000-000000000701'
+        $fixtureOwnerConversation = '00000000-0000-4000-8000-000000000402'
+        $fixtureOwnerMessage = '00000000-0000-4000-8000-000000000502'
+        $fixtureOwnerRun = '00000000-0000-4000-8000-000000000602'
+        $fixtureOwnerJob = '00000000-0000-4000-8000-000000000702'
         $psql = Join-Path $root '.tools\msys64\ucrt64\bin\psql.exe'
         if (!(Test-Path -LiteralPath $psql)) { throw 'Local PostgreSQL client is missing.' }
         function Invoke-LocalProjectSql([string]$Sql) {
@@ -216,9 +231,9 @@ try {
         }
         $cleanupSql = @"
 BEGIN;
-DELETE FROM runs WHERE conversation_id='$fixtureConversation';
-DELETE FROM messages WHERE conversation_id='$fixtureConversation';
-DELETE FROM conversations WHERE id='$fixtureConversation';
+DELETE FROM runs WHERE conversation_id IN ('$fixtureConversation','$fixtureOwnerConversation');
+DELETE FROM messages WHERE conversation_id IN ('$fixtureConversation','$fixtureOwnerConversation');
+DELETE FROM conversations WHERE id IN ('$fixtureConversation','$fixtureOwnerConversation');
 DELETE FROM project_agents WHERE project_id IN ('$fixtureProject','$permissionEditorProject','$permissionViewerProject','$permissionAgentlessProject','$permissionArchivedProject');
 DELETE FROM project_members WHERE project_id IN ('$fixtureProject','$permissionEditorProject','$permissionViewerProject','$permissionAgentlessProject','$permissionArchivedProject');
 DELETE FROM projects WHERE id IN ('$fixtureProject','$permissionEditorProject','$permissionViewerProject','$permissionAgentlessProject','$permissionArchivedProject');
@@ -249,12 +264,16 @@ VALUES ('$fixtureProject','00000000-0000-4000-8000-000000000201','00000000-0000-
 ('$permissionViewerProject','00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000101'),
 ('$permissionArchivedProject','00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000101');
 INSERT INTO conversations(id,owner_id,agent_id,project_id,title,status)
-VALUES ('$fixtureConversation','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000201','$fixtureProject','Package B guard conversation','active');
+VALUES ('$fixtureConversation','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000201','$fixtureProject','Package B editor guard conversation','active'),
+('$fixtureOwnerConversation','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000201','$fixtureProject','Package B owner guard conversation','active');
 INSERT INTO messages(id,conversation_id,sender_type,sender_id,role,content,status)
-VALUES ('$fixtureMessage','$fixtureConversation','user','00000000-0000-4000-8000-000000000102','user','fixture trigger','completed');
+VALUES ('$fixtureMessage','$fixtureConversation','user','00000000-0000-4000-8000-000000000102','user','editor fixture trigger','completed'),
+('$fixtureOwnerMessage','$fixtureOwnerConversation','user','00000000-0000-4000-8000-000000000101','user','owner fixture trigger','completed');
 INSERT INTO runs(id,conversation_id,agent_id,trigger_message_id,model_provider_id,status,initiated_by_user_id)
-VALUES ('$fixtureRun','$fixtureConversation','00000000-0000-4000-8000-000000000201','$fixtureMessage','00000000-0000-4000-8000-000000000001','queued','00000000-0000-4000-8000-000000000102');
-INSERT INTO jobs(id,run_id,status) VALUES ('$fixtureJob','$fixtureRun','queued');
+VALUES ('$fixtureRun','$fixtureConversation','00000000-0000-4000-8000-000000000201','$fixtureMessage','00000000-0000-4000-8000-000000000001','queued','00000000-0000-4000-8000-000000000102'),
+('$fixtureOwnerRun','$fixtureOwnerConversation','00000000-0000-4000-8000-000000000201','$fixtureOwnerMessage','00000000-0000-4000-8000-000000000001','cancelled','00000000-0000-4000-8000-000000000101');
+INSERT INTO jobs(id,run_id,status) VALUES ('$fixtureJob','$fixtureRun','queued'),
+('$fixtureOwnerJob','$fixtureOwnerRun','cancelled');
 COMMIT;
 "@
         $auditSql = @"
@@ -271,6 +290,22 @@ END `$`$;
             Invoke-LocalProjectSql $cleanupSql
             Invoke-LocalProjectSql $seedSql
             $env:BASE_URL = 'http://127.0.0.1:8080'
+            $env:GRPC_ADDR = '127.0.0.1:50051'
+            $env:PERMISSION_OWNER = '00000000-0000-4000-8000-000000000101'
+            $env:PERMISSION_EDITOR = '00000000-0000-4000-8000-000000000102'
+            $env:PERMISSION_AGENT = '00000000-0000-4000-8000-000000000201'
+            $env:PERMISSION_EDITOR_PROJECT = $permissionEditorProject
+            $env:PERMISSION_VIEWER_PROJECT = $permissionViewerProject
+            $env:PERMISSION_AGENTLESS_PROJECT = $permissionAgentlessProject
+            $env:PERMISSION_ARCHIVED_PROJECT = $permissionArchivedProject
+            $env:PERMISSION_FIXTURE_PROJECT = $fixtureProject
+            $env:PERMISSION_OWNER_RUN = $fixtureOwnerRun
+            $env:PERMISSION_EDITOR_RUN = $fixtureRun
+            $go = Join-Path $root '.tools\go\bin\go.exe'
+            if (!(Test-Path -LiteralPath $go)) { throw 'Local Go executable is missing.' }
+            & $go run -buildvcs=false ./tests/permission_rpc
+            if ($LASTEXITCODE -ne 0) { throw 'Permission RPC E2E failed' }
+
             $env:PROJECT_RUN_FIXTURE_PROJECT_ID = $fixtureProject
             $env:PROJECT_RUN_FIXTURE_USER_ID = '00000000-0000-4000-8000-000000000102'
             $env:PROJECT_RUN_FIXTURE_AGENT_ID = '00000000-0000-4000-8000-000000000201'
@@ -281,19 +316,6 @@ END `$`$;
             if ($LASTEXITCODE -ne 0) { throw 'Project API E2E failed' }
             $report = Get-Content -LiteralPath $env:PROJECT_TEST_REPORT -Raw | ConvertFrom-Json
             if ($report.status -ne 'PASS' -or !$report.active_run_removal_guard -or !$report.archive_active_run_guard -or !$report.archive_owner_only -or !$report.archived_readonly -or !$report.archive_audit) { throw 'Project API report did not confirm all guards' }
-
-            $env:GRPC_ADDR = '127.0.0.1:50051'
-            $env:PERMISSION_OWNER = '00000000-0000-4000-8000-000000000101'
-            $env:PERMISSION_EDITOR = '00000000-0000-4000-8000-000000000102'
-            $env:PERMISSION_AGENT = '00000000-0000-4000-8000-000000000201'
-            $env:PERMISSION_EDITOR_PROJECT = $permissionEditorProject
-            $env:PERMISSION_VIEWER_PROJECT = $permissionViewerProject
-            $env:PERMISSION_AGENTLESS_PROJECT = $permissionAgentlessProject
-            $env:PERMISSION_ARCHIVED_PROJECT = $permissionArchivedProject
-            $go = Join-Path $root '.tools\go\bin\go.exe'
-            if (!(Test-Path -LiteralPath $go)) { throw 'Local Go executable is missing.' }
-            & $go run -buildvcs=false ./tests/permission_rpc
-            if ($LASTEXITCODE -ne 0) { throw 'Permission RPC E2E failed' }
             Invoke-LocalProjectSql $auditSql
         }
         finally {

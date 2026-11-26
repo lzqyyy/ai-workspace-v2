@@ -135,6 +135,9 @@ func (w *worker) execute(parent context.Context, job *pb.JobLease) error {
 	if err != nil {
 		return err
 	}
+	if err := validateExecutionContext(execution); err != nil {
+		return w.finish(job, "failed", "INTERNAL", "", "")
+	}
 	var cancelRequested atomic.Bool
 	heartbeatDone := make(chan struct{})
 	go w.heartbeat(ctx, job, &cancelRequested, cancel, heartbeatDone)
@@ -238,4 +241,12 @@ func errorCode(err error) string {
 		return "RUN_CANCELLED"
 	}
 	return "MODEL_PROVIDER_ERROR"
+}
+
+func validateExecutionContext(exec *pb.GetExecutionContextResponse) error {
+	if exec == nil || exec.ProjectId == "" || exec.AgentId == "" || exec.AgentOwnerId == "" ||
+		exec.ConversationId == "" || exec.InitiatedByUserId == "" {
+		return errors.New("execution context is missing project, agent, owner, conversation, or initiator attribution")
+	}
+	return nil
 }

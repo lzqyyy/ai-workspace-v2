@@ -1309,8 +1309,10 @@ Json CoreService::getExecutionContext(const std::string& job_id, const std::stri
     auto r = s.query(
         "SELECT r.agent_id::text,r.conversation_id::text,a.system_prompt,p.provider_type,p.model_name,"
         "COALESCE(p.base_url,''),COALESCE(p.secret_ref,''),r.trigger_message_id::text,"
-        "(extract(epoch FROM j.lease_until)*1000)::bigint::text,j.attempt_count,j.max_attempts "
-        "FROM jobs j JOIN runs r ON r.id=j.run_id JOIN agents a ON a.id=r.agent_id "
+        "(extract(epoch FROM j.lease_until)*1000)::bigint::text,j.attempt_count,j.max_attempts,"
+        "c.project_id::text,a.owner_id::text,r.initiated_by_user_id::text "
+        "FROM jobs j JOIN runs r ON r.id=j.run_id JOIN conversations c ON c.id=r.conversation_id "
+        "JOIN agents a ON a.id=r.agent_id "
         "JOIN model_providers p ON p.id=r.model_provider_id WHERE j.id=$1 AND r.id=$2 "
         "AND j.lease_token=$3 AND j.status='running' AND j.lease_until>now()",
         {job_id, run_id, lease_token});
@@ -1331,7 +1333,9 @@ Json CoreService::getExecutionContext(const std::string& job_id, const std::stri
             {"conversation_id", r.get(0, 1)}, {"system_prompt", r.get(0, 2)},
             {"provider_type", r.get(0, 3)}, {"model_name", r.get(0, 4)},
             {"base_url", r.get(0, 5)}, {"secret_ref", r.get(0, 6)}, {"messages", messages},
-            {"next_event_seq", std::stoll(next.get(0, 0))}, {"lease_expires_at_unix_ms", std::stoll(r.get(0, 8))}};
+            {"next_event_seq", std::stoll(next.get(0, 0))}, {"lease_expires_at_unix_ms", std::stoll(r.get(0, 8))},
+            {"project_id", r.get(0, 11)}, {"agent_owner_id", r.get(0, 12)},
+            {"initiated_by_user_id", r.get(0, 13)}};
 }
 Json CoreService::heartbeat(const std::string& job_id, const std::string& run_id,
                             const std::string& lease_token, int lease_seconds, const std::string&)
@@ -1518,7 +1522,8 @@ std::pair<bool, std::string> CoreService::checkPermission(const std::string& act
             {project_id, resource_id, actor_user_id});
     } else if (resource_type == "RUN") {
         r = s.query(
-            "SELECT pm.role,p.status FROM runs r JOIN conversations c ON c.id=r.conversation_id "
+            "SELECT pm.role,p.status,r.initiated_by_user_id::text "
+            "FROM runs r JOIN conversations c ON c.id=r.conversation_id "
             "JOIN projects p ON p.id=c.project_id "
             "JOIN project_members pm ON pm.project_id=c.project_id "
             "WHERE c.project_id=$1 AND r.id=$2 AND pm.user_id=$3",
@@ -1529,6 +1534,10 @@ std::pair<bool, std::string> CoreService::checkPermission(const std::string& act
     if (r.rows() != 1) return {false, "not a project member or resource is outside this project"};
     const std::string role = r.get(0, 0);
     if (!project_role_allows(role, action)) return {false, "project role does not permit this action"};
+    if ((action == "run.cancel" || action == "run.retry") && role != "owner" &&
+        r.get(0, 2) != actor_user_id) {
+        return {false, "editors may only act on their own runs"};
+    }
     if (project_action_changes_state(action) && r.get(0, 1) != "active")
         return {false, "project is archived"};
     return {true, role};

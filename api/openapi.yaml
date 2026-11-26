@@ -893,7 +893,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         conversation_id: { type: string, format: uuid }
-        agent_id: { type: string, format: uuid, description: Actual target Agent for this Run. }
+        agent_id: { type: string, format: uuid, description: Actual target Agent for this Run; its agents.owner_id is the executing Agent Owner. }
         initiated_by_user_id: { type: string, format: uuid, description: User who created or retried this Run. }
         status: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
         cancel_requested: { type: boolean }

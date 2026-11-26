@@ -152,6 +152,7 @@ def main() -> int:
     )
 
     proto = PROTO.read_text(encoding="utf-8")
+    assert "Contract version: 1.3.0" in proto
     assert 'package aiworkspace.v1;' in proto
     rpcs = set(re.findall(r"\brpc\s+(\w+)\s*\(", proto))
     assert rpcs == EXPECTED_RPCS, f"RPC mismatch: {sorted(rpcs)}"
@@ -159,6 +160,11 @@ def main() -> int:
         assert re.search(rf"\b{field}\b", proto), f"missing proto field: {field}"
     permission_request = proto.split("message CheckPermissionRequest", 1)[1].split("}", 1)[0]
     assert re.search(r"\bproject_id\s*=\s*6\s*;", permission_request), "CheckPermissionRequest.project_id is required"
+    execution_response = proto.split("message GetExecutionContextResponse", 1)[1].split("}", 1)[0]
+    for field, number in (("project_id", 13), ("agent_owner_id", 14), ("initiated_by_user_id", 15)):
+        assert re.search(rf"\b{field}\s*=\s*{number}\s*;", execution_response), (
+            f"GetExecutionContextResponse.{field} is required"
+        )
 
     sse = SSE.read_text(encoding="utf-8")
     for event in EXPECTED_EVENTS:

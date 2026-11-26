@@ -1,5 +1,7 @@
 # Handoff: MVP-CLOSEOUT-20261126 Run Owner Traceability and Retry Target
 
+> 后续变更（2026-11-26）：用户已确认 `DB1`，新增 `010_single_active_run.sql` partial unique index 作为 5A 行锁的数据库兜底。下文中“不增加 partial unique index”的表述保留为历史记录，以 `MVP-CLOSEOUT-20261126-query-integrity.md` 和 ADR-0005 最新增量为准。
+
 - 状态：DONE
 - 主责 Agent：CORE/WEB/QA
 - 分支 / 提交：`main` / `7d18b03`

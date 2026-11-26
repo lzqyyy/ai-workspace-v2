@@ -134,6 +134,24 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   assert.strictEqual(elements.get('audit-section').classList.contains('hidden'), false, 'owner retains audit read after archive');
   assert.strictEqual(elements.get('readonly-note').classList.contains('hidden'), false, 'archived project shows readonly note');
   vm.runInContext("state.project.status = 'active'; applyPermissions();", context);
+  vm.runInContext(`
+    dispatch({type:'messages.snapshot', items:[{id:'message-store', content:'one'}]});
+    dispatch({type:'messages.upsert', message:{id:'message-store', content:'one-updated'}});
+    dispatch({type:'messages.upsert', message:{id:'message-second', content:'two'}});
+    dispatch({type:'agents.snapshot', items:[{agent_id:'agent-store'}]});
+    dispatch({type:'conversations.snapshot', items:[{id:'conversation-store', title:'one'}]});
+    dispatch({type:'conversation.upsert', conversation:{id:'conversation-store', title:'updated'}});
+    dispatch({type:'conversation.upsert', conversation:{id:'conversation-next', title:'next'}});
+    dispatch({type:'targetAgent.set', agentId:'agent-store'});
+    dispatch({type:'run.begin', run:{runId:'run-store', conversationId:'conversation-1', ownerId:'user-a', targetAgentId:'agent-store', lastEventId:0, partial:''}});
+    dispatch({type:'run.patch', patch:{lastEventId:2, partial:'stored'}});
+  `, context);
+  assert.strictEqual(JSON.stringify(vm.runInContext('state.messages.map((message) => [message.id, message.content])', context)), JSON.stringify([['message-store', 'one-updated'], ['message-second', 'two']]), 'message reducer must snapshot and upsert without duplicates');
+  assert.strictEqual(vm.runInContext('state.projectAgents[0].agent_id', context), 'agent-store', 'Agent snapshot must enter the store');
+  assert.strictEqual(JSON.stringify(vm.runInContext('state.conversations.map((conversation) => [conversation.id, conversation.title])', context)), JSON.stringify([['conversation-next', 'next'], ['conversation-store', 'updated']]), 'conversation reducer must snapshot and upsert without duplicates');
+  assert.strictEqual(vm.runInContext('state.targetAgentId', context), 'agent-store', 'target Agent must be reducer-managed');
+  assert.strictEqual(vm.runInContext('state.run.lastEventId', context), 2, 'Run cursor must be reducer-managed');
+  assert.strictEqual(vm.runInContext('state.run.partial', context), 'stored', 'Run partial state must be reducer-managed');
 
   vm.runInContext(`
     state.role = 'editor'; state.run = null; state.sending = false; state.targetAgentId = 'agent-1';
@@ -228,6 +246,36 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   context.handleRunEvent('message.delta', {data: JSON.stringify({seq: 10, payload: {delta: 'ial'}})}, 'run-running');
   assert.strictEqual(vm.runInContext('state.run.lastEventId', context), 10, 'SSE cursor must advance');
   assert.strictEqual(vm.runInContext('state.run.partial', context), 'partial', 'duplicate SSE events must be deduplicated');
+  vm.runInContext(`
+    state.activeConversation = {id:'conversation-gap'}; state.run = {runId:'run-gap', conversationId:'conversation-gap', ownerId:'user-b', targetAgentId:'agent-1', lastEventId:3, partial:'abc', reconnecting:false};
+    state.eventSource = {close(){ __gapSourceClosed = true; }}; __gapSourceClosed = false; __gapRunCalls = []; __gapReconnected = false;
+    renderMessages = () => {}; applyPermissions = () => {}; persistRun = () => {};
+    api = async (path) => {
+      __gapRunCalls.push(path);
+      if (path.endsWith('/messages')) return {items:[{id:'message-snapshot', sender_type:'user', content:'snapshot', run_id:'run-gap'}]};
+      return {id:'run-gap', status:'running', initiated_by_user_id:'user-b', agent_id:'agent-1'};
+    };
+    connectRun = () => { __gapReconnected = true; };
+  `, context);
+  await context.handleRunEvent('message.delta', {data: JSON.stringify({seq: 5, payload: {delta: 'missed'}})}, 'run-gap');
+  assert.strictEqual(context.__gapSourceClosed, true, 'Run seq gap must close the stale SSE');
+  assert.strictEqual(vm.runInContext('state.run.lastEventId', context), 3, 'Run seq gap must not advance the cursor before replay');
+  assert.strictEqual(vm.runInContext('state.run.partial', context), 'abc', 'Run seq gap must not apply a missing delta');
+  assert.ok(context.__gapRunCalls.includes('/api/v1/runs/run-gap'), 'Run seq gap must reload Run snapshot');
+  assert.ok(context.__gapRunCalls.includes('/api/v1/conversations/conversation-gap/messages'), 'Run seq gap must reload message snapshot');
+  assert.strictEqual(JSON.stringify(vm.runInContext('state.messages', context)), JSON.stringify([{id:'message-snapshot', sender_type:'user', content:'snapshot', run_id:'run-gap'}]), 'Run seq gap must replace messages from the snapshot');
+  assert.strictEqual(context.__gapReconnected, true, 'Run seq gap must reconnect after snapshot recovery');
+  vm.runInContext(`
+    state.run = {runId:'run-gap-background', conversationId:'conversation-old', ownerId:'user-b', targetAgentId:'agent-1', lastEventId:1, partial:'old', reconnecting:false};
+    state.activeConversation = {id:'conversation-current'}; state.messages = [{id:'current-message', content:'current'}];
+    state.eventSource = {close(){}}; renderMessages = () => {}; persistRun = () => {}; connectRun = () => {};
+    api = async (path) => {
+      if (path.endsWith('/messages')) return {items:[{id:'wrong-snapshot', content:'wrong'}]};
+      return {id:'run-gap-background', status:'running', initiated_by_user_id:'user-b', agent_id:'agent-1'};
+    };
+  `, context);
+  await context.handleRunEvent('message.delta', {data: JSON.stringify({seq: 3, payload: {delta: 'gap'}})}, 'run-gap-background');
+  assert.strictEqual(JSON.stringify(vm.runInContext('state.messages', context)), JSON.stringify([{id:'current-message', content:'current'}]), 'background Run recovery must not overwrite the active conversation snapshot');
 
   let conversationSourceUrl = '';
   context.EventSource = class {
@@ -251,6 +299,31 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   assert.strictEqual(vm.runInContext('__conversationEvents', context), 1, 'duplicate Conversation events must be ignored');
   assert.deepStrictEqual(Array.from(context.__conversationArgs), ['run-event', 'conversation-events', 0, '', 'user-b', 'agent-real']);
   assert.strictEqual(localStorage.getItem('workspace.conversationEventCursor.conversation-events'), '7');
+  vm.runInContext(`
+    const gapConversation = 'conversation-gap-events';
+    localStorage.setItem('workspace.conversationEventCursor.' + gapConversation, '3');
+    state.activeConversation = {id:gapConversation}; state.conversationEventCursor = 3; state.conversationEventCursorTrusted = true;
+    state.conversationEventSource = {close(){ __conversationGapSourceClosed = true; }}; __conversationGapSourceClosed = false;
+    state.messages = []; state.run = null; state.terminalRuns = new Set();
+    __conversationGapLoads = 0; __conversationGapEvents = 0; __conversationGapReconnects = 0; __conversationGapPaths = [];
+    api = async (path) => { __conversationGapLoads += 1; __conversationGapPaths.push(path); return {items:[{id:'gap-snapshot-message', sender_type:'user', content:'snapshot'}]}; };
+    discoverRunFromMessages = async () => false;
+    renderMessages = () => {};
+    beginRun = () => { __conversationGapEvents += 1; };
+    connectConversationStream = () => { __conversationGapReconnects += 1; __conversationResyncAtReconnect = state.conversationEventResyncingId; };
+  `, context);
+  const conversationGapEvent = JSON.stringify({schema_version:'1.0', conversation_id:'conversation-gap-events', seq:5, type:'run.available', payload:{run_id:'run-gap-event', target_agent_id:'agent-real', initiated_by_user_id:'user-b', status:'queued'}});
+  await context.handleConversationEvent({data:conversationGapEvent}, 'conversation-gap-events');
+  await context.handleConversationEvent({data:conversationGapEvent}, 'conversation-gap-events');
+  assert.strictEqual(context.__conversationGapSourceClosed, true, 'Conversation seq gap must close the stale SSE');
+  assert.strictEqual(context.__conversationGapLoads, 1, 'Conversation seq gap must reload exactly one snapshot');
+  assert.ok(context.__conversationGapPaths.includes('/api/v1/conversations/conversation-gap-events/messages'), 'Conversation seq gap must read the messages snapshot');
+  assert.strictEqual(JSON.stringify(vm.runInContext('state.messages', context)), JSON.stringify([{id:'gap-snapshot-message', sender_type:'user', content:'snapshot'}]), 'Conversation seq gap must replace messages from the snapshot');
+  assert.strictEqual(context.__conversationGapEvents, 0, 'Conversation seq gap must not start a Run directly from the skipped event');
+  assert.strictEqual(vm.runInContext('state.conversationEventCursor', context), 5, 'Conversation cursor may advance only after snapshot recovery');
+  assert.strictEqual(localStorage.getItem('workspace.conversationEventCursor.conversation-gap-events'), '5', 'Conversation gap cursor must persist after recovery');
+  assert.strictEqual(context.__conversationGapReconnects, 1, 'Conversation stream must reconnect after snapshot recovery');
+  assert.strictEqual(context.__conversationResyncAtReconnect, null, 'Conversation resync scope must clear before reconnecting');
 
   let pollCallback = null;
   context.setInterval = (callback) => { pollCallback = callback; return 1; };
@@ -296,5 +369,5 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   await context.__sidebarClose;
   assert.strictEqual(sidebarClasses.has('open'), false, 'selecting a conversation must close mobile sidebar');
 
-  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, conversation_sse:true, conversation_event_real_agent:true, conversation_event_dedupe:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true,audit_owner_ui:true,archive_owner_ui:true,archived_readonly_ui:true}));
+  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, store_reducer:true, retry_dedupe:true, refresh_restore:true, shared_run_discovery:true, conversation_sse:true, conversation_event_real_agent:true, conversation_event_dedupe:true, run_gap_snapshot:true, conversation_gap_snapshot:true, background_run_isolation:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true,audit_owner_ui:true,archive_owner_ui:true,archived_readonly_ui:true}));
 })().catch((error) => { console.error(error); process.exitCode = 1; });

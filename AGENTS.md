@@ -57,7 +57,7 @@ agent_contract:
 - Mock 流式 Provider 与 OpenAI-compatible Provider 适配器。
 - Project、ProjectMember、ProjectAgent；owner/editor/viewer 权限与审计；owner-only Project 软归档和脱敏审计读取。
 - Project-first 共享 Conversation、`target_agent_id` 发送、单 active Run 和 Project member Run/SSE 权限。
-- 浏览器刷新后的历史恢复、Run SSE 游标回放、Conversation `run.available` 实时发现和 2.5 秒轮询兜底。
+- 浏览器刷新后的历史恢复、Run SSE 游标回放、Conversation `run.available` 实时发现和 2.5 秒轮询兜底；原生 JS 最小 reducer 管理 Conversation/Message/Agent/Run 游标，并对 Run/Conversation seq gap 重拉快照。
 - Conversation 事件由 `009_conversation_events.sql` 持久化，C++ 在创建/重试 Run 的同一事务写入。
 - Docker-first 启动、契约/API/双浏览器 E2E、迁移重放和 2H+2A 演示脚本。
 - 本地开发、Docker Compose、Runbook 和交接体系。

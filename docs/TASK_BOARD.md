@@ -49,6 +49,7 @@
 | PERM-20261121 Project 权限加固、审计读取与归档 | CORE/WEB/QA | DONE | 集中式 role × action、CheckPermission 显式 Project 上下文与 archived 状态、成员移除 Agent 映射清理、owner-only 脱敏审计 API/UI、Q4-B 单向软归档、legacy 归档建会话 409；Docker 全量/API/权限 RPC/浏览器/health PASS |
 | TEST-20261123 实时链路、连接池与运行时审查 | CORE/QA | DONE | 本地工具链全量构建；Conversation/Run SSE、双浏览器 2H+2A、Project 权限/归档、审计参数校验、256/32 连接池压力、迁移重放和 connect_timeout PASS；见 `docs/handoffs/TEST-20261123-runtime-review.md` |
 | D13-20261125 Agent 归属与不可信输入 | CORE/WORKER/QA | DONE | Permission RPC Run 发起者校验、Worker 归属上下文、消息不可信输入边界、跨项目/提示注入专项；Docker 全量 PASS；见 `docs/handoffs/D13-20261125-agent-attribution-untrusted.md` |
+| T0-20261126 实时状态与 gap 恢复 | WEB/QA | DONE | S1+P0+T0：原生 JS 最小 store/reducer、Run/Conversation seq gap 快照恢复、重复事件去重；Docker 全量、前端状态和双浏览器 2H+2A PASS；见 `docs/handoffs/T0-20261126-realtime-state-gap.md` |
 
 ## Gate 结果
 

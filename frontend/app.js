@@ -22,13 +22,56 @@ const els = {
   auditEvents: $('audit-events'), refreshAudit: $('refresh-audit'), toast: $('toast')
 };
 
-const state = {
+let state = {
   user: null, projects: [], project: null, role: null, members: [], projectAgents: [], ownedAgents: [],
   conversations: [], activeConversation: null, messages: [], targetAgentId: null, run: null, eventSource: null,
-  conversationEventSource: null, conversationEventCursor: 0,
+  conversationEventSource: null, conversationEventCursor: 0, conversationEventCursorTrusted: false, conversationEventResyncingId: null,
   lastRunId: null, lastRunOwnerId: null, terminalRuns: new Set(), retrying: false, sending: false,
   cancelling: false, retryVisible: false, pollTimer: null, messageLoadSeq: 0, toastTimer: null
 };
+
+function domainReducer(current, action) {
+  switch (action.type) {
+    case 'messages.snapshot':
+      return {...current, messages: [...(action.items || [])]};
+    case 'messages.upsert': {
+      if (!action.message?.id) return current;
+      const messages = [...current.messages];
+      const index = messages.findIndex((message) => message.id === action.message.id);
+      if (index >= 0) messages[index] = action.message; else messages.push(action.message);
+      return {...current, messages};
+    }
+    case 'conversations.snapshot':
+      return {...current, conversations: [...(action.items || [])]};
+    case 'conversation.upsert': {
+      if (!action.conversation?.id) return current;
+      const conversations = [...current.conversations];
+      const index = conversations.findIndex((conversation) => conversation.id === action.conversation.id);
+      if (index >= 0) conversations[index] = action.conversation; else conversations.unshift(action.conversation);
+      return {...current, conversations};
+    }
+    case 'agents.snapshot':
+      return {...current, projectAgents: [...(action.items || [])]};
+    case 'targetAgent.set':
+      return {...current, targetAgentId: action.agentId || null};
+    case 'run.begin':
+      return {...current, run: {...action.run, lastEventId: Number(action.run?.lastEventId) || 0, partial: action.run?.partial || ''}};
+    case 'run.patch':
+      return current.run ? {...current, run: {...current.run, ...(action.patch || {})}} : current;
+    case 'run.clear':
+      return {...current, run: null};
+    case 'conversationCursor.set':
+      return {...current, conversationEventCursor: Number(action.cursor) || 0,
+        conversationEventCursorTrusted: action.trusted !== false};
+    default:
+      return current;
+  }
+}
+
+function dispatch(action) {
+  state = domainReducer(state, action);
+  return state;
+}
 
 class ApiError extends Error {
   constructor(code, message, status, retryable = false) { super(message); this.code = code; this.status = status; this.retryable = retryable; }
@@ -116,9 +159,9 @@ async function login(event) {
 async function logout() {
   try { await api('/api/v1/auth/logout', {method: 'POST'}); } catch {}
   stopPolling(); closeRunStream(); closeConversationStream(); localStorage.removeItem('workspace.activeRun'); localStorage.removeItem('workspace.projectId');
-  state.user = null; state.projects = []; state.project = null; state.role = null; state.members = []; state.projectAgents = [];
-  state.ownedAgents = []; state.conversations = []; state.messages = []; state.activeConversation = null; state.run = null;
-  state.conversationEventCursor = 0; state.lastRunId = null; state.lastRunOwnerId = null; showAuth();
+  state.user = null; state.projects = []; state.project = null; state.role = null; state.members = []; dispatch({type:'agents.snapshot', items:[]});
+  state.ownedAgents = []; dispatch({type:'conversations.snapshot', items:[]}); dispatch({type:'messages.snapshot', items:[]}); state.activeConversation = null; dispatch({type:'run.clear'});
+  dispatch({type:'conversationCursor.set', cursor:0, trusted:false}); state.conversationEventResyncingId = null; state.lastRunId = null; state.lastRunOwnerId = null; showAuth();
 }
 async function bootstrap() {
   try {
@@ -143,20 +186,22 @@ function renderProjectSelect() {
 }
 function resetProjectSelection() {
   closeConversationStream();
-  state.project = null; state.role = null; state.members = []; state.projectAgents = []; state.conversations = []; state.messages = [];
-  state.activeConversation = null; state.targetAgentId = null; els.projectName.textContent = '未选择 Project';
+  closeRunStream(); dispatch({type:'run.clear'});
+  state.project = null; state.role = null; state.members = []; dispatch({type:'agents.snapshot', items:[]}); dispatch({type:'conversations.snapshot', items:[]}); dispatch({type:'messages.snapshot', items:[]});
+  state.activeConversation = null; dispatch({type:'targetAgent.set', agentId:null}); els.projectName.textContent = '未选择 Project';
   els.projectDescription.textContent = '创建或加入 Project 后开始协作'; els.roleBadge.textContent = '—'; els.roleBadge.className = 'role-badge';
   els.userRole.textContent = '未加入 Project'; renderConversations(); renderAgents(); renderMembers(); renderProjectAgents(); clearConversationView(); applyPermissions();
 }
 async function selectProject(projectId) {
   if (!projectId) return;
   closeConversationStream();
+  closeRunStream(); dispatch({type:'run.clear'});
   const encoded = encodeURIComponent(projectId);
   const [project, members, agents, conversations] = await Promise.all([
     api(`/api/v1/projects/${encoded}`), api(`/api/v1/projects/${encoded}/members`),
     api(`/api/v1/projects/${encoded}/agents`), api(`/api/v1/projects/${encoded}/conversations`)
   ]);
-  state.project = project; state.members = members.items || []; state.projectAgents = agents.items || []; state.conversations = conversations.items || [];
+  state.project = project; state.members = members.items || []; dispatch({type:'agents.snapshot', items:agents.items || []}); dispatch({type:'conversations.snapshot', items:conversations.items || []});
   state.role = currentMember()?.role || null; localStorage.setItem('workspace.projectId', project.id);
   renderProjectSelect(); renderProjectHeader(); renderMembers(); renderProjectAgents(); renderAgents(); renderConversations(); applyPermissions(); startPolling();
   const rememberedConversation = localStorage.getItem(`workspace.conversation.${project.id}`);
@@ -220,7 +265,7 @@ function renderAgents() {
   for (const item of state.projectAgents) { const option = document.createElement('option'); option.value = item.agent_id; option.textContent = item.agent?.name || item.agent_id; els.agentSelect.append(option); }
   const remembered = state.project ? localStorage.getItem(`workspace.targetAgent.${state.project.id}`) : null;
   const valid = state.projectAgents.some((item) => item.agent_id === remembered);
-  state.targetAgentId = valid ? remembered : state.projectAgents[0]?.agent_id || null;
+  dispatch({type:'targetAgent.set', agentId: valid ? remembered : state.projectAgents[0]?.agent_id || null});
   if (state.targetAgentId) els.agentSelect.value = state.targetAgentId;
   applyPermissions();
 }
@@ -246,7 +291,7 @@ function updateEmptyState() {
   els.emptyAction.disabled = !state.project && !state.user; els.emptyAction.classList.toggle('hidden', Boolean(state.activeConversation)); applyPermissions();
 }
 function clearConversationView() {
-  state.activeConversation = null; state.messages = []; els.messages.replaceChildren();
+  state.activeConversation = null; dispatch({type:'messages.snapshot', items:[]}); els.messages.replaceChildren();
   els.conversationTitle.textContent = state.project ? '选择一个共享会话' : '选择一个 Project';
   els.conversationSubtitle.textContent = 'Project 成员共享完整消息历史'; updateEmptyState();
 }
@@ -284,7 +329,7 @@ async function loadMessages(showError = true) {
   try {
     const response = await api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`);
     if (loadSeq !== state.messageLoadSeq || state.activeConversation?.id !== conversationId) return false;
-    state.messages = response.items || []; const discovered = await discoverRunFromMessages(); renderMessages(); return discovered;
+    dispatch({type:'messages.snapshot', items:response.items || []}); const discovered = await discoverRunFromMessages(); renderMessages(); return discovered;
   } catch (error) { if (loadSeq === state.messageLoadSeq && showError && state.activeConversation?.id === conversationId) setError(error.message, error.retryable); return false; }
 }
 async function discoverRunFromMessages() {
@@ -310,11 +355,11 @@ function closeRunStream() { if (state.eventSource) { state.eventSource.close(); 
 function conversationCursorKey(conversationId) { return `workspace.conversationEventCursor.${conversationId}`; }
 function closeConversationStream() { if (state.conversationEventSource) { state.conversationEventSource.close(); state.conversationEventSource = null; } }
 function connectConversationStream() {
-  if (!state.activeConversation) return;
+  if (!state.activeConversation || state.conversationEventResyncingId === state.activeConversation.id) return;
   closeConversationStream();
   const conversation = state.activeConversation;
   const savedCursor = Number(localStorage.getItem(conversationCursorKey(conversation.id))) || 0;
-  state.conversationEventCursor = savedCursor;
+  dispatch({type:'conversationCursor.set', cursor:savedCursor, trusted:savedCursor > 0});
   const requestId = `web-conversation-sse-${uuid()}`;
   const after = savedCursor > 0 ? `&after=${savedCursor}` : '';
   const source = new EventSource(`/api/v1/conversations/${encodeURIComponent(conversation.id)}/events?request_id=${encodeURIComponent(requestId)}${after}`);
@@ -324,19 +369,42 @@ function connectConversationStream() {
     if (state.activeConversation?.id !== conversation.id || state.conversationEventSource !== source) return;
     if (source.readyState === 2) {
       source.close(); state.conversationEventSource = null;
-      setTimeout(() => { if (state.activeConversation?.id === conversation.id && !state.conversationEventSource) connectConversationStream(); }, 1800);
+      setTimeout(() => { if (state.activeConversation?.id === conversation.id && !state.conversationEventSource && state.conversationEventResyncingId !== conversation.id) connectConversationStream(); }, 1800);
     }
   };
 }
-function handleConversationEvent(event, conversationId) {
-  if (state.activeConversation?.id !== conversationId) return;
-  let envelope; try { envelope = JSON.parse(event.data); } catch { return; }
-  const seq = Number(envelope.seq) || 0;
-  if (seq && seq <= state.conversationEventCursor) return;
-  if (seq) {
-    state.conversationEventCursor = seq;
+async function recoverConversationGap(seq) {
+  const conversationId = state.activeConversation?.id;
+  if (!conversationId || state.conversationEventResyncingId === conversationId) return;
+  state.conversationEventResyncingId = conversationId;
+  closeConversationStream();
+  try {
+    const snapshot = await api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`);
+    if (state.activeConversation?.id !== conversationId) return;
+    dispatch({type:'messages.snapshot', items: snapshot.items || []});
+    await discoverRunFromMessages();
+    renderMessages();
+    dispatch({type:'conversationCursor.set', cursor:seq, trusted:true});
     localStorage.setItem(conversationCursorKey(conversationId), String(seq));
+    if (state.conversationEventResyncingId === conversationId) state.conversationEventResyncingId = null;
+    connectConversationStream();
+  } catch (error) {
+    if (state.activeConversation?.id === conversationId) setError(error.message, error.retryable);
+  } finally {
+    if (state.conversationEventResyncingId === conversationId) state.conversationEventResyncingId = null;
   }
+}
+async function handleConversationEvent(event, conversationId) {
+  if (state.activeConversation?.id !== conversationId || state.conversationEventResyncingId === conversationId) return;
+  let envelope; try { envelope = JSON.parse(event.data); } catch { return; }
+  const seq = Number(envelope.seq) || 0; if (!seq) return;
+  if (seq <= state.conversationEventCursor) return;
+  if (state.conversationEventCursorTrusted && seq > state.conversationEventCursor + 1) {
+    await recoverConversationGap(seq);
+    return;
+  }
+  dispatch({type:'conversationCursor.set', cursor:seq, trusted:true});
+  localStorage.setItem(conversationCursorKey(conversationId), String(seq));
   const payload = envelope.payload || {};
   if (envelope.type !== 'run.available' || !payload.run_id || !payload.target_agent_id || !payload.initiated_by_user_id) return;
   if (!['queued', 'running'].includes(payload.status) || state.terminalRuns.has(payload.run_id)) return;
@@ -344,14 +412,12 @@ function handleConversationEvent(event, conversationId) {
     state.terminalRuns.add(payload.run_id); return;
   }
   if (state.run?.runId === payload.run_id) {
-    state.run.targetAgentId = payload.target_agent_id;
-    state.run.ownerId = payload.initiated_by_user_id;
+    dispatch({type:'run.patch', patch:{targetAgentId:payload.target_agent_id, ownerId:payload.initiated_by_user_id}});
     persistRun(); renderMessages(); applyPermissions(); return;
   }
   if (state.run?.conversationId === conversationId) return;
   beginRun(payload.run_id, conversationId, 0, '', payload.initiated_by_user_id, payload.target_agent_id);
 }
-
 async function sendMessage(event) {
   event?.preventDefault(); const content = els.messageInput.value.trim();
   if (!content || !state.activeConversation || state.run || !canWrite() || !state.targetAgentId) return;
@@ -362,7 +428,7 @@ async function sendMessage(event) {
       body: JSON.stringify({content, client_request_id: requestId, target_agent_id: state.targetAgentId})
     });
     els.messageInput.value = ''; els.messageInput.style.height = 'auto';
-    if (!state.messages.some((message) => message.id === response.message.id)) state.messages.push(response.message);
+    dispatch({type:'messages.upsert', message:response.message});
     renderMessages(); state.lastRunOwnerId = state.user.id;
     beginRun(response.run_id, state.activeConversation.id, 0, '', state.user.id, state.targetAgentId);
   } catch (error) {
@@ -379,7 +445,7 @@ async function createConversation() {
     const conversation = await api(`/api/v1/projects/${encodeURIComponent(state.project.id)}/conversations`, {
       method: 'POST', body: JSON.stringify({agent_id: state.targetAgentId, title: `共享对话 ${new Date().toLocaleDateString('zh-CN')}`})
     });
-    state.conversations.unshift(conversation); renderConversations(); await selectConversation(conversation.id); toast('共享会话已创建');
+    dispatch({type:'conversation.upsert', conversation}); renderConversations(); await selectConversation(conversation.id); toast('共享会话已创建');
   } catch (error) { toast(error.message); }
 }
 async function createAgent(event) {
@@ -389,7 +455,7 @@ async function createAgent(event) {
     state.ownedAgents.unshift(agent);
     if (state.project && canWrite()) {
       await api(`/api/v1/projects/${encodeURIComponent(state.project.id)}/agents`, {method: 'POST', body: JSON.stringify({agent_id: agent.id})});
-      await refreshProjectData(); state.targetAgentId = agent.id; localStorage.setItem(`workspace.targetAgent.${state.project.id}`, agent.id); renderAgents(); updateEmptyState();
+      await refreshProjectData(); dispatch({type:'targetAgent.set', agentId:agent.id}); localStorage.setItem(`workspace.targetAgent.${state.project.id}`, agent.id); renderAgents(); updateEmptyState();
     }
     els.agentDialog.close(); toast(state.project && canWrite() ? 'Agent 已创建并加入 Project' : 'Agent 已创建');
   } catch (error) { els.agentError.textContent = error.message; } finally { els.agentSubmit.disabled = false; }
@@ -404,7 +470,7 @@ async function retryRun() {
   state.retrying = true; els.retryButton.disabled = true; clearError(); setRunState('active', '正在重试'); setSending(true);
   try {
     const response = await api(`/api/v1/runs/${encodeURIComponent(state.lastRunId)}/retry`, {method: 'POST', headers: {'Idempotency-Key': `retry-${uuid()}`}});
-    if (!state.messages.some((message) => message.id === response.message.id)) state.messages.push(response.message);
+    dispatch({type:'messages.upsert', message:response.message});
     renderMessages(); state.lastRunOwnerId = state.user.id;
     beginRun(response.run_id, state.activeConversation.id, 0, '', state.user.id, response.message?.target_agent_id || response.target_agent_id || state.targetAgentId);
   } catch (error) { state.sending = false; setRunState('error', '重试失败'); setError(error.message, error.retryable); }
@@ -413,14 +479,14 @@ async function retryRun() {
 function beginRun(runId, conversationId, lastEventId = 0, partial = '', ownerId = null, targetAgentId = null) {
   const existing = state.run?.runId === runId ? state.run : null;
   if (!existing) closeRunStream();
-  state.run = {
+  dispatch({type:'run.begin', run:{
     runId, conversationId,
     ownerId: existing?.ownerId || ownerId || null,
     targetAgentId: existing?.targetAgentId || targetAgentId || null,
     lastEventId: existing ? existing.lastEventId : Number(lastEventId) || 0,
     partial: existing ? existing.partial : partial || '',
-    reconnecting: false,
-  };
+    reconnecting: false, resyncing: false,
+  }});
   state.lastRunId = runId; state.lastRunOwnerId = state.run.ownerId; state.sending = false; persistRun();
   setRunState('active', state.run.ownerId && state.run.ownerId !== state.user?.id ? '协作者运行中' : 'Run 已排队'); clearError();
   if (state.activeConversation?.id === conversationId) {
@@ -431,21 +497,62 @@ function beginRun(runId, conversationId, lastEventId = 0, partial = '', ownerId 
 function connectRun() {
   if (!state.run) return; closeRunStream(); const run = state.run; const requestId = `web-sse-${uuid()}`;
   const source = new EventSource(`/api/v1/runs/${encodeURIComponent(run.runId)}/events?request_id=${encodeURIComponent(requestId)}&after=${run.lastEventId}`); state.eventSource = source;
-  source.onopen = () => { if (state.run?.runId === run.runId && state.eventSource === source) { state.run.reconnecting = false; setRunState('active', run.ownerId && run.ownerId !== state.user?.id ? '协作者运行中' : '流式接收中'); } };
+  source.onopen = () => { if (state.run?.runId === run.runId && state.eventSource === source) { dispatch({type:'run.patch', patch:{reconnecting:false}}); setRunState('active', run.ownerId && run.ownerId !== state.user?.id ? '协作者运行中' : '流式接收中'); } };
   for (const name of ['run.started', 'message.delta', 'message.completed', 'run.failed', 'run.cancelled']) source.addEventListener(name, (event) => handleRunEvent(name, event, run.runId));
   source.onerror = () => {
     if (!state.run || state.run.runId !== run.runId || state.eventSource !== source) return;
-    if (source.readyState === 0) { state.run.reconnecting = true; setRunState('active', '连接中断，正在按 Last-Event-ID 回放'); }
+    if (source.readyState === 0) { dispatch({type:'run.patch', patch:{reconnecting:true}}); setRunState('active', '连接中断，正在按 Last-Event-ID 回放'); }
     else if (source.readyState === 2) { source.close(); if (state.eventSource === source) state.eventSource = null; setRunState('error', '事件连接失败'); setError('SSE 连接失败，将使用已保存游标重连', true); setTimeout(() => { if (state.run?.runId === run.runId && !state.eventSource) connectRun(); }, 1800); }
   };
 }
-function handleRunEvent(name, event, runId) {
-  if (!state.run || state.run.runId !== runId) return; let envelope; try { envelope = JSON.parse(event.data); } catch { return; }
-  const seq = Number(envelope.seq) || 0; if (seq && seq <= state.run.lastEventId) return;
-  state.run.lastEventId = seq || state.run.lastEventId;
+async function recoverRunGap(seq) {
+  const run = state.run;
+  if (!run || run.resyncing) return;
+  const {runId, conversationId} = run;
+  dispatch({type:'run.patch', patch:{resyncing:true}});
+  closeRunStream();
+  try {
+    const [runSnapshot, messageSnapshot] = await Promise.all([
+      api(`/api/v1/runs/${encodeURIComponent(runId)}`),
+      api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`)
+    ]);
+    if (state.run?.runId !== runId) return;
+    const activeConversation = state.activeConversation?.id === conversationId;
+    if (activeConversation) {
+      dispatch({type:'messages.snapshot', items: messageSnapshot.items || []});
+      renderMessages();
+    }
+    const ownerId = runSnapshot.initiated_by_user_id || run.ownerId || null;
+    const targetAgentId = runSnapshot.agent_id || run.targetAgentId || null;
+    if (['queued', 'running'].includes(runSnapshot.status)) {
+      dispatch({type:'run.patch', patch:{ownerId, targetAgentId, resyncing:false}});
+      persistRun(); connectRun();
+      return;
+    }
+    state.terminalRuns.add(runId); state.lastRunId = runId; state.lastRunOwnerId = ownerId;
+    dispatch({type:'run.clear'}); localStorage.removeItem('workspace.activeRun'); setSending(false);
+    if (runSnapshot.status === 'succeeded') { setRunState('success', '已完成'); clearError(); }
+    else if (runSnapshot.status === 'failed') { setRunState('error', '运行失败'); setError('运行失败。可以重新运行。', true); }
+    else { setRunState('error', '已取消'); setError('运行已取消。可以重新运行。', true); }
+    applyPermissions();
+  } catch (error) {
+    if (state.run?.runId !== runId) return;
+    dispatch({type:'run.patch', patch:{resyncing:false}});
+    setRunState('error', '事件恢复失败');
+    setError('事件序列中断，请刷新页面恢复。', false);
+    persistRun();
+  }
+}
+async function handleRunEvent(name, event, runId) {
+  if (!state.run || state.run.runId !== runId || state.run.resyncing) return; let envelope; try { envelope = JSON.parse(event.data); } catch { return; }
+  const seq = Number(envelope.seq) || 0; if (!seq) return;
+  if (seq <= state.run.lastEventId) return;
+  if (seq > state.run.lastEventId + 1) { await recoverRunGap(seq); return; }
+  const patch = {lastEventId: seq || state.run.lastEventId};
   if (name === 'run.started') setRunState('active', state.run.ownerId && state.run.ownerId !== state.user?.id ? '协作者运行中' : 'Worker 执行中');
-  if (name === 'message.delta') { state.run.partial += envelope.payload?.delta || ''; updateStreamingNode(); }
-  if (name === 'message.completed') { state.run.partial = envelope.payload?.content || state.run.partial; updateStreamingNode(); }
+  if (name === 'message.delta') { patch.partial = state.run.partial + (envelope.payload?.delta || ''); dispatch({type:'run.patch', patch}); updateStreamingNode(); }
+  else if (name === 'message.completed') { patch.partial = envelope.payload?.content || state.run.partial; dispatch({type:'run.patch', patch}); updateStreamingNode(); }
+  else dispatch({type:'run.patch', patch});
   persistRun();
   if (name === 'message.completed') finishRun('succeeded', envelope);
   if (name === 'run.failed') finishRun('failed', envelope);
@@ -458,7 +565,7 @@ function updateStreamingNode() {
 
 async function finishRun(kind, envelope) {
   if (!state.run) return; const conversationId = state.run.conversationId; const finishedRunId = state.run.runId;
-  state.terminalRuns.add(finishedRunId); closeRunStream(); state.run = null; state.lastRunId = finishedRunId;
+  state.terminalRuns.add(finishedRunId); closeRunStream(); dispatch({type:'run.clear'}); state.lastRunId = finishedRunId;
   localStorage.removeItem('workspace.activeRun'); setSending(false);
   if (state.activeConversation?.id === conversationId) {
     if (kind === 'succeeded') { setRunState('success', '已完成'); clearError(); }
@@ -539,7 +646,7 @@ async function archiveCurrentProject() {
 async function refreshProjectData() {
   if (!state.project) return; const encoded = encodeURIComponent(state.project.id);
   const [members, agents, conversations] = await Promise.all([api(`/api/v1/projects/${encoded}/members`), api(`/api/v1/projects/${encoded}/agents`), api(`/api/v1/projects/${encoded}/conversations`)]);
-  state.members = members.items || []; state.projectAgents = agents.items || []; state.conversations = conversations.items || []; state.role = currentMember()?.role || null;
+  state.members = members.items || []; dispatch({type:'agents.snapshot', items:agents.items || []}); dispatch({type:'conversations.snapshot', items:conversations.items || []}); state.role = currentMember()?.role || null;
   renderProjectHeader(); renderMembers(); renderProjectAgents(); renderAgents(); renderConversations(); applyPermissions();
 }
 async function addMember(event) {
@@ -563,7 +670,7 @@ async function addOwnedAgent() {
   const agentId = els.ownedAgentSelect.value; if (!agentId || !canWrite()) return; els.settingsError.textContent = '';
   try {
     await api(`/api/v1/projects/${encodeURIComponent(state.project.id)}/agents`, {method: 'POST', body: JSON.stringify({agent_id: agentId})});
-    await refreshProjectData(); state.targetAgentId = agentId; localStorage.setItem(`workspace.targetAgent.${state.project.id}`, agentId); renderAgents(); toast('Agent 已加入 Project');
+    await refreshProjectData(); dispatch({type:'targetAgent.set', agentId}); localStorage.setItem(`workspace.targetAgent.${state.project.id}`, agentId); renderAgents(); toast('Agent 已加入 Project');
   } catch (error) { els.settingsError.textContent = error.message; }
 }
 async function removeProjectAgent(agentId) {
@@ -584,7 +691,7 @@ function bindEvents() {
   els.archiveProject.addEventListener('click', archiveCurrentProject); els.refreshAudit.addEventListener('click', loadAuditEvents);
   els.cancelButton.addEventListener('click', cancelRun); els.retryButton.addEventListener('click', retryRun);
   els.emptyAction.addEventListener('click', () => { if (!state.project) openProjectDialog(); else if (!state.projectAgents.length || !canWrite()) openProjectSettings(); else createConversation(); });
-  els.agentSelect.addEventListener('change', () => { state.targetAgentId = els.agentSelect.value; if (state.project) localStorage.setItem(`workspace.targetAgent.${state.project.id}`, state.targetAgentId); applyPermissions(); });
+  els.agentSelect.addEventListener('change', () => { dispatch({type:'targetAgent.set', agentId:els.agentSelect.value}); if (state.project) localStorage.setItem(`workspace.targetAgent.${state.project.id}`, state.targetAgentId); applyPermissions(); });
   els.messageInput.addEventListener('input', autoResize);
   els.messageInput.addEventListener('keydown', (event) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); els.messageForm.requestSubmit(); } });
   document.querySelectorAll('[data-close-dialog]').forEach((button) => { button.addEventListener('click', () => $(button.dataset.closeDialog)?.close()); });

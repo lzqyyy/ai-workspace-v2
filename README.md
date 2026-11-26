@@ -13,8 +13,8 @@ Browser -> C++ HTTP/SSE :8080 -> PostgreSQL :5432
 
 - Project 创建/列表/详情、owner-only 软归档与脱敏审计读取；owner/editor/viewer 角色与成员管理。
 - Agent 所有权和 Project Agent 映射；只有 Agent owner 能加入自己的 Agent。
-- Project-first 共享 Conversation、共享 Message 历史、必填 `target_agent_id`。
-- 同一 Conversation 单 active Run；发送/retry 冲突返回 409。
+- Project-first 共享 Conversation、共享 Message 历史、必填 `target_agent_id`；消息历史默认 100/最大 200 游标分页。
+- 同一 Conversation 单 active Run；Project + Conversation 行锁与 partial unique index 双重保证，发送/retry 冲突返回 409。
 - Project member Run/SSE 权限；owner/editor 操作自己的 Run，owner 可操作任意 Run，viewer 只读。
 - 原生 HTML/CSS/JavaScript Project-first 工作台、目标 Agent 选择、Conversation `run.available` 实时发现、共享 Run SSE 与断线回放。
 - 2.5 秒消息轮询保留为发现/刷新兜底；新 Run 不再只依赖轮询。
@@ -56,7 +56,7 @@ Docker-first 全量：
 ./scripts/test.ps1 -Docker
 ```
 
-包含契约、Go Worker test/vet、前端状态、连接池并发/归还、单用户 E2E、2H+2A API E2E、Project 权限 fixture、审计与迁移重放。
+包含契约、Go Worker test/vet、前端状态、连接池并发/归还、单用户 E2E、2H+2A API E2E、Project 权限 fixture、审计、迁移重放与查询完整性检查。
 
 浏览器 E2E：
 
@@ -72,6 +72,7 @@ Docker-first 全量：
 ```powershell
 ./scripts/test-pool.ps1 -Docker
 ./scripts/test-migrations.ps1 -Docker
+./scripts/test-query-integrity.ps1 -Docker
 ./scripts/test-health.ps1
 ./scripts/test-lease.ps1
 ```

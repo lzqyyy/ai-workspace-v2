@@ -34,6 +34,15 @@ function domainReducer(current, action) {
   switch (action.type) {
     case 'messages.snapshot':
       return {...current, messages: [...(action.items || [])]};
+    case 'messages.merge': {
+      const messages = [...current.messages];
+      for (const message of action.items || []) {
+        const index = messages.findIndex((item) => item.id === message.id);
+        if (index >= 0) messages[index] = message; else messages.push(message);
+      }
+      messages.sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
+      return {...current, messages};
+    }
     case 'messages.upsert': {
       if (!action.message?.id) return current;
       const messages = [...current.messages];
@@ -298,7 +307,7 @@ function clearConversationView() {
 async function selectConversation(id) {
   const conversation = state.conversations.find((item) => item.id === id); if (!conversation) return;
   document.querySelector?.('.sidebar')?.classList.remove('open');
-  state.activeConversation = conversation; localStorage.setItem(`workspace.conversation.${state.project.id}`, conversation.id);
+  state.activeConversation = conversation; dispatch({type:'messages.snapshot', items:[]}); localStorage.setItem(`workspace.conversation.${state.project.id}`, conversation.id);
   renderConversations(); els.emptyState.classList.add('hidden'); els.messages.classList.remove('hidden');
   els.conversationTitle.textContent = conversation.title; els.conversationSubtitle.textContent = `${state.project.name} · ${state.role} · ${state.projectAgents.length} 个 Project Agent`;
   clearError(); connectConversationStream(); await loadMessages(true); if (state.run?.conversationId === id && !state.eventSource) connectRun(); startPolling();
@@ -323,13 +332,29 @@ function renderMessages() {
 }
 function scrollToBottom() { requestAnimationFrame(() => { const stage = $('message-stage'); stage.scrollTop = stage.scrollHeight; }); }
 
+async function fetchMessagePages(conversationId, startAfter = 0) {
+  const items = [];
+  let after = Number(startAfter) || 0;
+  for (;;) {
+    const response = await api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages?after_seq=${after}&limit=200`);
+    items.push(...(response.items || []));
+    if (!response.has_more) return items;
+    const next = Number(response.next_after_seq);
+    if (!Number.isSafeInteger(next) || next <= after) throw new Error('消息分页游标无效');
+    after = next;
+  }
+}
+async function fetchMessageSnapshot(conversationId) { return fetchMessagePages(conversationId, 0); }
 async function loadMessages(showError = true) {
   const conversationId = state.activeConversation?.id; if (!conversationId) return false;
   const loadSeq = ++state.messageLoadSeq;
+  const lastSeq = state.messages.reduce((max, message) => Math.max(max, Number(message.seq) || 0), 0);
+  const incremental = state.messages.length > 0 && lastSeq > 0;
   try {
-    const response = await api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`);
+    const items = await fetchMessagePages(conversationId, incremental ? lastSeq : 0);
     if (loadSeq !== state.messageLoadSeq || state.activeConversation?.id !== conversationId) return false;
-    dispatch({type:'messages.snapshot', items:response.items || []}); const discovered = await discoverRunFromMessages(); renderMessages(); return discovered;
+    dispatch(incremental ? {type:'messages.merge', items} : {type:'messages.snapshot', items});
+    const discovered = await discoverRunFromMessages(); renderMessages(); return discovered;
   } catch (error) { if (loadSeq === state.messageLoadSeq && showError && state.activeConversation?.id === conversationId) setError(error.message, error.retryable); return false; }
 }
 async function discoverRunFromMessages() {
@@ -379,9 +404,9 @@ async function recoverConversationGap(seq) {
   state.conversationEventResyncingId = conversationId;
   closeConversationStream();
   try {
-    const snapshot = await api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`);
+    const snapshot = await fetchMessageSnapshot(conversationId);
     if (state.activeConversation?.id !== conversationId) return;
-    dispatch({type:'messages.snapshot', items: snapshot.items || []});
+    dispatch({type:'messages.snapshot', items: snapshot});
     await discoverRunFromMessages();
     renderMessages();
     dispatch({type:'conversationCursor.set', cursor:seq, trusted:true});
@@ -514,12 +539,12 @@ async function recoverRunGap(seq) {
   try {
     const [runSnapshot, messageSnapshot] = await Promise.all([
       api(`/api/v1/runs/${encodeURIComponent(runId)}`),
-      api(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`)
+      fetchMessageSnapshot(conversationId)
     ]);
     if (state.run?.runId !== runId) return;
     const activeConversation = state.activeConversation?.id === conversationId;
     if (activeConversation) {
-      dispatch({type:'messages.snapshot', items: messageSnapshot.items || []});
+      dispatch({type:'messages.snapshot', items: messageSnapshot});
       renderMessages();
     }
     const ownerId = runSnapshot.initiated_by_user_id || run.ownerId || null;

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AI Workspace V2.0 Core API
-  version: 1.3.0
+  version: 1.4.0
   description: |
     Frozen REST contract between the native browser client and the C++ core.
     All API requests are same-origin and authenticated by an HttpOnly session cookie.
@@ -500,19 +500,30 @@ paths:
         - $ref: '#/components/parameters/RequestId'
         - name: after_seq
           in: query
-          schema: { type: integer, format: int64, minimum: 0 }
+          schema: { type: integer, format: int64, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 100 }
       responses:
         '200':
-          description: Message history
+          description: Bounded message history page
           content:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required: [items, has_more, next_after_seq]
                 properties:
                   items:
                     type: array
+                    maxItems: 200
                     items: { $ref: '#/components/schemas/Message' }
+                  has_more:
+                    type: boolean
+                    description: True when another page is available after next_after_seq.
+                  next_after_seq:
+                    type: integer
+                    format: int64
+                    minimum: 0
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }

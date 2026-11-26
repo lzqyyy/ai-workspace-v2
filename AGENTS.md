@@ -56,8 +56,9 @@ agent_contract:
 - PostgreSQL 持久化、事务、Job 租约、重试、取消和幂等。
 - Mock 流式 Provider 与 OpenAI-compatible Provider 适配器。
 - Project、ProjectMember、ProjectAgent；owner/editor/viewer 权限与审计；owner-only Project 软归档和脱敏审计读取。
-- Project-first 共享 Conversation、`target_agent_id` 发送、单 active Run 和 Project member Run/SSE 权限。
+- Project-first 共享 Conversation、`target_agent_id` 发送、单 active Run（行锁 + partial unique index）和 Project member Run/SSE 权限。
 - 浏览器刷新后的历史恢复、Run SSE 游标回放、Conversation `run.available` 实时发现和 2.5 秒轮询兜底；原生 JS 最小 reducer 管理 Conversation/Message/Agent/Run 游标，并对 Run/Conversation seq gap 重拉快照。
+- Message 历史默认 100/最大 200 分页；RunEvent 与 ConversationEvent 单次增量查询最多 200 条。
 - Conversation 事件由 `009_conversation_events.sql` 持久化，C++ 在创建/重试 Run 的同一事务写入。
 - Docker-first 启动、契约/API/双浏览器 E2E、迁移重放和 2H+2A 演示脚本。
 - 本地开发、Docker Compose、Runbook 和交接体系。
@@ -262,7 +263,7 @@ python tests/e2e.py
 - 本地 PostgreSQL：`127.0.0.1:55432`，数据库 `workspace`。
 - Docker PostgreSQL：内部 `postgres:5432`，不发布宿主机端口。
 - 迁移入口：`db/migrations/*.sql`，由 C++ 启动时执行。
-- 当前迁移：`001_init` 到 `008_run_initiated_by`。
+- 当前迁移：`001_init` 到 `010_single_active_run`。
 - 所有迁移必须可重复执行并记录 `schema_migrations`。
 - 不得提交数据库数据、WAL、日志、`pgdata/` 或 `.env`。
 - 破坏性变更必须先写 ADR。

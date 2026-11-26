@@ -33,6 +33,8 @@ if ($Docker) {
         if ($LASTEXITCODE -ne 0) { throw 'E2E failed' }
         & (Join-Path $PSScriptRoot 'test-migrations.ps1') -Docker
         if ($LASTEXITCODE -ne 0) { throw 'Migration replay check failed' }
+        & (Join-Path $PSScriptRoot 'test-query-integrity.ps1') -Docker
+        if ($LASTEXITCODE -ne 0) { throw 'Query integrity check failed' }
         Write-Host 'All Docker-first checks passed.'
     }
     finally { Pop-Location }

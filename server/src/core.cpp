@@ -852,7 +852,7 @@ Json CoreService::createProjectConversation(const std::string& user_id, const st
 }
 
 Json CoreService::listMessages(const std::string& user_id, const std::string& conversation_id,
-                               long long after_seq, const std::string& request_id)
+                               long long after_seq, int limit, const std::string& request_id)
 {
     require_uuid(conversation_id, "conversation_id");
     auto s = db_.session();
@@ -861,11 +861,15 @@ Json CoreService::listMessages(const std::string& user_id, const std::string& co
     requireProjectRole(s, conversation.get(0, 0), user_id, false,
                        "message.list", request_id);
     auto r = s.query(std::string("SELECT ") + kMessageColumns +
-                         " FROM messages m WHERE m.conversation_id=$1 AND m.seq>$2 ORDER BY m.seq",
-                     {conversation_id, std::to_string(after_seq)});
+                         " FROM messages m WHERE m.conversation_id=$1 AND m.seq>$2 "
+                         "ORDER BY m.seq LIMIT $3::int",
+                     {conversation_id, std::to_string(after_seq), std::to_string(limit + 1)});
     Json items = Json::array();
-    for (int row = 0; row < r.rows(); ++row) items.push_back(message_json(r, row));
-    return {{"items", items}};
+    const int returned = std::min(limit, r.rows());
+    for (int row = 0; row < returned; ++row) items.push_back(message_json(r, row));
+    long long next_after_seq = after_seq;
+    if (returned > 0) next_after_seq = std::stoll(r.get(returned - 1, 2));
+    return {{"items", items}, {"has_more", r.rows() > limit}, {"next_after_seq", next_after_seq}};
 }
 
 Json CoreService::sendMessage(const std::string& user_id, const std::string& conversation_id, const Json& body,
@@ -1187,7 +1191,7 @@ Json CoreService::listRunEvents(const std::string& user_id, const std::string& r
     auto r = s.query(
         "SELECT seq::text,event_type,payload_jsonb::text,request_id,"
         "to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') "
-        "FROM run_events WHERE run_id=$1 AND seq>$2 ORDER BY run_events.seq",
+        "FROM run_events WHERE run_id=$1 AND seq>$2 ORDER BY run_events.seq LIMIT 200",
         {run_id, std::to_string(after_seq)});
     Json items = Json::array();
     for (int row = 0; row < r.rows(); ++row) {

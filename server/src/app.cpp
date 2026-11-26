@@ -26,6 +26,19 @@ std::string idempotency_key(const HttpRequestPtr& req) {
         throw ServiceError(400, "VALIDATION_FAILED", "Idempotency-Key must be 8-100 characters");
     return value;
 }
+long long integer_query_param(const HttpRequestPtr& req, const std::string& name, long long fallback,
+                              long long minimum, long long maximum) {
+    const auto raw = req->getParameter(name);
+    if (raw.empty()) return fallback;
+    std::size_t consumed = 0;
+    long long value = 0;
+    try { value = std::stoll(raw, &consumed); }
+    catch (...) { throw ServiceError(400, "VALIDATION_FAILED", name + " must be an integer"); }
+    if (consumed != raw.size() || value < minimum || value > maximum)
+        throw ServiceError(400, "VALIDATION_FAILED", name + " must be between " + std::to_string(minimum) +
+                                                         " and " + std::to_string(maximum));
+    return value;
+}
 HttpResponsePtr json_response(const Json& body, int status, const std::string& rid) {
     auto response = HttpResponse::newHttpResponse();
     response->setStatusCode(static_cast<HttpStatusCode>(status));
@@ -289,9 +302,9 @@ void Api::registerRoutes()
         const std::string conversation_id = conversationId;
         if (req->method() == Get) {
             run_json(req, cb, true, [this, req, conversation_id](const AuthSession& s, const std::string& rid) {
-                long long after = 0;
-                try { after = std::stoll(req->getParameter("after_seq")); } catch (...) {}
-                return service_.listMessages(s.user_id, conversation_id, after, rid);
+                const long long after = integer_query_param(req, "after_seq", 0, 0, std::numeric_limits<long long>::max());
+                const int limit = static_cast<int>(integer_query_param(req, "limit", 100, 1, 200));
+                return service_.listMessages(s.user_id, conversation_id, after, limit, rid);
             });
         } else {
             run_json(req, cb, true, [this, req, conversation_id](const AuthSession& s, const std::string& rid) {

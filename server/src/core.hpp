@@ -52,7 +52,7 @@ public:
     Json createConversation(const std::string& user_id, const Json& body, const std::string& request_id);
     Json createProjectConversation(const std::string& user_id, const std::string& project_id, const Json& body,
                                    const std::string& request_id);
-    Json listMessages(const std::string& user_id, const std::string& conversation_id, long long after_seq, const std::string& request_id);
+    Json listMessages(const std::string& user_id, const std::string& conversation_id, long long after_seq, int limit, const std::string& request_id);
     Json sendMessage(const std::string& user_id, const std::string& conversation_id, const Json& body,
                      const std::string& client_request_id, const std::string& request_id);
     Json retryRun(const std::string& user_id, const std::string& run_id, const std::string& idempotency_key,

@@ -270,7 +270,7 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
     renderMessages = () => {}; applyPermissions = () => {}; persistRun = () => {};
     api = async (path) => {
       __gapRunCalls.push(path);
-      if (path.endsWith('/messages')) return {items:[{id:'message-snapshot', sender_type:'user', content:'snapshot', run_id:'run-gap'}]};
+      if (path.includes('/messages')) return {items:[{id:'message-snapshot', sender_type:'user', content:'snapshot', run_id:'run-gap'}]};
       return {id:'run-gap', status:'running', initiated_by_user_id:'user-b', agent_id:'agent-1'};
     };
     connectRun = () => { __gapReconnected = true; };
@@ -280,7 +280,7 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   assert.strictEqual(vm.runInContext('state.run.lastEventId', context), 3, 'Run seq gap must not advance the cursor before replay');
   assert.strictEqual(vm.runInContext('state.run.partial', context), 'abc', 'Run seq gap must not apply a missing delta');
   assert.ok(context.__gapRunCalls.includes('/api/v1/runs/run-gap'), 'Run seq gap must reload Run snapshot');
-  assert.ok(context.__gapRunCalls.includes('/api/v1/conversations/conversation-gap/messages'), 'Run seq gap must reload message snapshot');
+  assert.ok(context.__gapRunCalls.some((path) => path.startsWith('/api/v1/conversations/conversation-gap/messages')), 'Run seq gap must reload message snapshot');
   assert.strictEqual(JSON.stringify(vm.runInContext('state.messages', context)), JSON.stringify([{id:'message-snapshot', sender_type:'user', content:'snapshot', run_id:'run-gap'}]), 'Run seq gap must replace messages from the snapshot');
   assert.strictEqual(context.__gapReconnected, true, 'Run seq gap must reconnect after snapshot recovery');
   vm.runInContext(`
@@ -288,7 +288,7 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
     state.activeConversation = {id:'conversation-current'}; state.messages = [{id:'current-message', content:'current'}];
     state.eventSource = {close(){}}; renderMessages = () => {}; persistRun = () => {}; connectRun = () => {};
     api = async (path) => {
-      if (path.endsWith('/messages')) return {items:[{id:'wrong-snapshot', content:'wrong'}]};
+      if (path.includes('/messages')) return {items:[{id:'wrong-snapshot', content:'wrong'}]};
       return {id:'run-gap-background', status:'running', initiated_by_user_id:'user-b', agent_id:'agent-1'};
     };
   `, context);
@@ -335,7 +335,7 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   await context.handleConversationEvent({data:conversationGapEvent}, 'conversation-gap-events');
   assert.strictEqual(context.__conversationGapSourceClosed, true, 'Conversation seq gap must close the stale SSE');
   assert.strictEqual(context.__conversationGapLoads, 1, 'Conversation seq gap must reload exactly one snapshot');
-  assert.ok(context.__conversationGapPaths.includes('/api/v1/conversations/conversation-gap-events/messages'), 'Conversation seq gap must read the messages snapshot');
+  assert.ok(context.__conversationGapPaths.some((path) => path.startsWith('/api/v1/conversations/conversation-gap-events/messages')), 'Conversation seq gap must read the messages snapshot');
   assert.strictEqual(JSON.stringify(vm.runInContext('state.messages', context)), JSON.stringify([{id:'gap-snapshot-message', sender_type:'user', content:'snapshot'}]), 'Conversation seq gap must replace messages from the snapshot');
   assert.strictEqual(context.__conversationGapEvents, 0, 'Conversation seq gap must not start a Run directly from the skipped event');
   assert.strictEqual(vm.runInContext('state.conversationEventCursor', context), 5, 'Conversation cursor may advance only after snapshot recovery');
@@ -364,6 +364,31 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   await context.__loadFirst;
   assert.deepStrictEqual(Array.from(vm.runInContext('state.messages.map((message) => message.id)', context)), ['newer'], 'older message response must not overwrite newer history');
 
+  vm.runInContext(`
+    __pagePaths = [];
+    api = async (path) => {
+      __pagePaths.push(path);
+      if (path.includes('after_seq=0')) return {items:[{id:'page-1', seq:1}], has_more:true, next_after_seq:1};
+      return {items:[{id:'page-2', seq:2}], has_more:false, next_after_seq:2};
+    };
+  `, context);
+  const pagedMessages = await context.fetchMessageSnapshot('conversation-paged');
+  assert.deepStrictEqual(Array.from(pagedMessages, (message) => message.id), ['page-1', 'page-2'], 'message snapshot must follow bounded pages');
+  assert.strictEqual(context.__pagePaths.length, 2, 'message snapshot must stop when has_more is false');
+  assert.ok(context.__pagePaths.every((path) => path.includes('limit=200')), 'message pages must request the maximum bounded size');
+
+  vm.runInContext(`
+    state.activeConversation = {id:'conversation-incremental'};
+    state.messages = [{id:'old-message', seq:4}];
+    state.messageLoadSeq = 0;
+    __incrementalPaths = [];
+    api = async (path) => { __incrementalPaths.push(path); return {items:[{id:'new-message', seq:5}], has_more:false, next_after_seq:5}; };
+    renderMessages = () => {}; discoverRunFromMessages = async () => false;
+  `, context);
+  await context.loadMessages(false);
+  assert.ok(context.__incrementalPaths[0].includes('after_seq=4'), 'polling must request only messages after the current cursor');
+  assert.deepStrictEqual(Array.from(vm.runInContext('state.messages.map((message) => message.id)', context)), ['old-message', 'new-message'], 'incremental polling must merge without dropping history');
+
   sidebarClasses.add('open');
   vm.runInContext(`
     state.run = null;
@@ -387,5 +412,5 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   await context.__sidebarClose;
   assert.strictEqual(sidebarClasses.has('open'), false, 'selecting a conversation must close mobile sidebar');
 
-  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, store_reducer:true, retry_dedupe:true, retry_target_agent:true, refresh_restore:true, shared_run_discovery:true, conversation_sse:true, conversation_event_real_agent:true, conversation_event_dedupe:true, run_gap_snapshot:true, conversation_gap_snapshot:true, background_run_isolation:true, background_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true,audit_owner_ui:true,archive_owner_ui:true,archived_readonly_ui:true}));
+  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, store_reducer:true, retry_dedupe:true, retry_target_agent:true, refresh_restore:true, shared_run_discovery:true, conversation_sse:true, conversation_event_real_agent:true, conversation_event_dedupe:true, run_gap_snapshot:true, conversation_gap_snapshot:true, background_run_isolation:true, background_polling:true, message_pagination:true, incremental_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true,audit_owner_ui:true,archive_owner_ui:true,archived_readonly_ui:true}));
 })().catch((error) => { console.error(error); process.exitCode = 1; });

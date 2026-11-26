@@ -1,7 +1,7 @@
 # 数据库 ER 设计 V1.1.0
 
 - 数据库：PostgreSQL 16+
-- 迁移：`db/migrations/001_init.sql` 至 `009_conversation_events.sql`
+- 迁移：`db/migrations/001_init.sql` 至 `010_single_active_run.sql`
 - 唯一业务写入者：C++ Core
 - Worker 禁止连接 PostgreSQL
 
@@ -40,7 +40,8 @@ erDiagram
 - Project 成员可见 Project 下全部 Conversation、Message，并可订阅该 Project 下 Run 的 SSE；不建立 `conversation_members`。
 - `conversations.owner_id` 保留为创建者字段，不再作为权限归属；`conversations.agent_id` 保留为历史默认 Agent 字段。
 - 新消息请求必须携带 `client_request_id` 和 `target_agent_id`；目标 Agent 写入 `runs.agent_id`，`target_agent_id` 不是 `messages` 表字段。
-- 一个 Conversation 同时最多一个 `status IN ('queued','running')` 的 Run；当前由 Project + Conversation 行锁和 409 返回保证。
+- 一个 Conversation 同时最多一个 `status IN ('queued','running')` 的 Run；由 Project + Conversation 行锁、409 返回和 `ux_runs_one_active_per_conversation` partial unique index 共同保证。
+- Message 历史按 `after_seq` 游标分页，默认 100、最大 200；RunEvent 单次增量查询最多 200 条。
 - `messages.client_request_id` 按 `(conversation_id, sender_id, client_request_id)` 唯一，不同用户可使用相同客户端请求 ID；同一用户重复请求返回原消息和 Run。
 - `runs.initiated_by_user_id` 表示实际发起或重试该 Run 的用户；`trigger_message_id` 保留不可变的原始触发消息。历史 Run 按触发消息作者回填。
 - Project 内一个用户只有一个角色；至少一个 `owner` 由应用事务保证。不能移除或降级最后一个 owner。
@@ -61,7 +62,7 @@ erDiagram
 - 写入 owner 成员关系与 Project Agent 映射；
 - 回填 `conversations.project_id`。
 
-工程包 C 的 `007_conversation_project_required.sql` 在兼容 Conversation 写入已切换为始终提供 `project_id` 后，将 `conversations.project_id` 收紧为 `NOT NULL`。`008_run_initiated_by.sql` 新增并回填 `runs.initiated_by_user_id`；`009_conversation_events.sql` 新增 Conversation 级可回放事件表。Package B/C 已完成 Project-first Conversation 路由、Project membership 运行权限，以及基于 Project + Conversation 行锁的单 active Run 事务。迁移不得删除现有数据，也不得修改既有迁移。
+工程包 C 的 `007_conversation_project_required.sql` 在兼容 Conversation 写入已切换为始终提供 `project_id` 后，将 `conversations.project_id` 收紧为 `NOT NULL`。`008_run_initiated_by.sql` 新增并回填 `runs.initiated_by_user_id`；`009_conversation_events.sql` 新增 Conversation 级可回放事件表；`010_single_active_run.sql` 增加单 active Run 唯一索引。Package B/C 已完成 Project-first Conversation 路由、Project membership 运行权限，以及基于 Project + Conversation 行锁的单 active Run 事务。迁移不得删除现有数据，也不得修改既有迁移。
 
 ## 4. 权限查询约束
 

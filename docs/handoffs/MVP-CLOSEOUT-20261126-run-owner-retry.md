@@ -2,7 +2,7 @@
 
 - 状态：DONE
 - 主责 Agent：CORE/WEB/QA
-- 分支 / 提交：`main` / pending auto-sync
+- 分支 / 提交：`main` / `7d18b03`
 - 开始时间：2026-11-26
 - 完成时间：2026-11-26
 

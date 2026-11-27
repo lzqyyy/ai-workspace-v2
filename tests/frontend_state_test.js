@@ -380,6 +380,7 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   vm.runInContext(`
     state.activeConversation = {id:'conversation-incremental'};
     state.messages = [{id:'old-message', seq:4}];
+    state.conversationStreamOpen = true;
     state.messageLoadSeq = 0;
     __incrementalPaths = [];
     api = async (path) => { __incrementalPaths.push(path); return {items:[{id:'new-message', seq:5}], has_more:false, next_after_seq:5}; };
@@ -388,6 +389,22 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   await context.loadMessages(false);
   assert.ok(context.__incrementalPaths[0].includes('after_seq=4'), 'polling must request only messages after the current cursor');
   assert.deepStrictEqual(Array.from(vm.runInContext('state.messages.map((message) => message.id)', context)), ['old-message', 'new-message'], 'incremental polling must merge without dropping history');
+
+  vm.runInContext(`
+    state.activeConversation = {id:'conversation-retry-fallback'};
+    state.messages = [{id:'retry-message', seq:4, sender_type:'user', run_id:'run-old'}];
+    state.conversationStreamOpen = false;
+    state.messageLoadSeq = 0;
+    __fallbackPaths = [];
+    api = async (path) => {
+      __fallbackPaths.push(path);
+      return {items:[{id:'retry-message', seq:4, sender_type:'user', run_id:'run-new'}], has_more:false, next_after_seq:4};
+    };
+    renderMessages = () => {}; discoverRunFromMessages = async () => false;
+  `, context);
+  await context.loadMessages(false);
+  assert.ok(context.__fallbackPaths[0].includes('after_seq=0'), 'polling without Conversation SSE must reload a snapshot');
+  assert.strictEqual(vm.runInContext("state.messages[0].run_id", context), 'run-new', 'snapshot fallback must observe in-place retry updates');
 
   sidebarClasses.add('open');
   vm.runInContext(`
@@ -412,5 +429,5 @@ context.__originalSelectConversation = vm.runInContext('selectConversation', con
   await context.__sidebarClose;
   assert.strictEqual(sidebarClasses.has('open'), false, 'selecting a conversation must close mobile sidebar');
 
-  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, store_reducer:true, retry_dedupe:true, retry_target_agent:true, refresh_restore:true, shared_run_discovery:true, conversation_sse:true, conversation_event_real_agent:true, conversation_event_dedupe:true, run_gap_snapshot:true, conversation_gap_snapshot:true, background_run_isolation:true, background_polling:true, message_pagination:true, incremental_polling:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true,audit_owner_ui:true,archive_owner_ui:true,archived_readonly_ui:true}));
+  console.log(JSON.stringify({status:'PASS', role_permissions:true, target_agent_payload:true, project_conversation_route:true, store_reducer:true, retry_dedupe:true, retry_target_agent:true, refresh_restore:true, shared_run_discovery:true, conversation_sse:true, conversation_event_real_agent:true, conversation_event_dedupe:true, run_gap_snapshot:true, conversation_gap_snapshot:true, background_run_isolation:true, background_polling:true, message_pagination:true, incremental_polling:true, retry_snapshot_fallback:true, out_of_order_history:true, sse_reconnect:true, sse_dedupe:true, mobile_sidebar_close:true,audit_owner_ui:true,archive_owner_ui:true,archived_readonly_ui:true}));
 })().catch((error) => { console.error(error); process.exitCode = 1; });

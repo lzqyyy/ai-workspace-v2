@@ -25,7 +25,7 @@ const els = {
 let state = {
   user: null, projects: [], project: null, role: null, members: [], projectAgents: [], ownedAgents: [],
   conversations: [], activeConversation: null, messages: [], targetAgentId: null, run: null, eventSource: null,
-  conversationEventSource: null, conversationEventCursor: 0, conversationEventCursorTrusted: false, conversationEventResyncingId: null,
+  conversationEventSource: null, conversationStreamOpen: false, conversationEventCursor: 0, conversationEventCursorTrusted: false, conversationEventResyncingId: null,
   lastRunId: null, lastRunOwnerId: null, terminalRuns: new Set(), retrying: false, sending: false,
   cancelling: false, retryVisible: false, pollTimer: null, messageLoadSeq: 0, toastTimer: null
 };
@@ -349,7 +349,9 @@ async function loadMessages(showError = true) {
   const conversationId = state.activeConversation?.id; if (!conversationId) return false;
   const loadSeq = ++state.messageLoadSeq;
   const lastSeq = state.messages.reduce((max, message) => Math.max(max, Number(message.seq) || 0), 0);
-  const incremental = state.messages.length > 0 && lastSeq > 0;
+  // Retry updates an existing message's run_id without changing seq. If Conversation SSE is unavailable,
+  // use a snapshot so polling can still rediscover the retried Run.
+  const incremental = state.conversationStreamOpen && state.messages.length > 0 && lastSeq > 0;
   try {
     const items = await fetchMessagePages(conversationId, incremental ? lastSeq : 0);
     if (loadSeq !== state.messageLoadSeq || state.activeConversation?.id !== conversationId) return false;
@@ -378,7 +380,7 @@ function persistRun() {
 }
 function closeRunStream() { if (state.eventSource) { state.eventSource.close(); state.eventSource = null; } }
 function conversationCursorKey(conversationId) { return `workspace.conversationEventCursor.${conversationId}`; }
-function closeConversationStream() { if (state.conversationEventSource) { state.conversationEventSource.close(); state.conversationEventSource = null; } }
+function closeConversationStream() { state.conversationStreamOpen = false; if (state.conversationEventSource) { state.conversationEventSource.close(); state.conversationEventSource = null; } }
 function connectConversationStream() {
   if (!state.activeConversation || state.conversationEventResyncingId === state.activeConversation.id) return;
   closeConversationStream();
@@ -389,9 +391,11 @@ function connectConversationStream() {
   const after = savedCursor > 0 ? `&after=${savedCursor}` : '';
   const source = new EventSource(`/api/v1/conversations/${encodeURIComponent(conversation.id)}/events?request_id=${encodeURIComponent(requestId)}${after}`);
   state.conversationEventSource = source;
+  source.onopen = () => { if (state.activeConversation?.id === conversation.id && state.conversationEventSource === source) state.conversationStreamOpen = true; };
   source.addEventListener('run.available', (event) => handleConversationEvent(event, conversation.id));
   source.onerror = () => {
     if (state.activeConversation?.id !== conversation.id || state.conversationEventSource !== source) return;
+    state.conversationStreamOpen = false;
     if (source.readyState === 2) {
       source.close(); state.conversationEventSource = null;
       setTimeout(() => { if (state.activeConversation?.id === conversation.id && !state.conversationEventSource && state.conversationEventResyncingId !== conversation.id) connectConversationStream(); }, 1800);

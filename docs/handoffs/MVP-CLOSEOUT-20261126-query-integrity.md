@@ -73,6 +73,12 @@
 - `./scripts/test-health.ps1`：PASS；停库 503、恢复 200
 - `./scripts/test-lease.ps1`：PASS；wrong lease、cancel lease expiry、event seq gap/duplicate/out-of-order 全部通过
 
+## 审查修复
+
+- 修复审查发现的 P1：Conversation SSE 不可用时，2.5 秒轮询回退完整消息快照，确保 retry 对已有消息 `run_id` 的原地更新仍能被发现。
+- `tests/frontend_state_test.js` 增加 `retry_snapshot_fallback`：SSE 离线时从 `after_seq=0` 重拉，并断言旧消息的 `run_id` 更新为 retry 后的新 Run。
+- 复审相关验证：前端语法/状态测试、契约校验、Go test/vet、Python 编译、PowerShell 语法与敏感信息扫描均通过。
+
 ## 验收映射
 
 - `MVP-06`：唯一索引存在；query integrity 断言第二个 active Run 插入被 `unique_violation` 拒绝；Run 归属原有回归继续 PASS。

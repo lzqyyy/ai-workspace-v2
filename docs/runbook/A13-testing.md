@@ -14,7 +14,8 @@
 | Conversation 实时专项 | `python tests/conversation_realtime.py` | `run.available` 字段/低延迟、retry 事件、幂等不重复事件、显式回放、viewer 订阅、非成员 403 |
 | 浏览器 E2E | `./scripts/frontend-e2e.ps1` | 真实 Edge/Chrome 登录、Project-first 单用户发送与流式完成 |
 | 2H+2A 浏览器 E2E | `./scripts/frontend-2h2a-e2e.ps1` | 双浏览器上下文、双人类、双 Agent、共享历史、双方 Conversation/Run SSE、真实目标 Agent、viewer 只读 |
-| 迁移重放 | `./scripts/test-migrations.ps1 -Docker` | project_id NOT NULL、007 唯一迁移行、Core 重启重新执行迁移 |
+| 迁移重放 | `./scripts/test-migrations.ps1 -Docker` | project_id NOT NULL、007/008/009/010 唯一迁移行、Core 重启重新执行迁移 |
+| 查询完整性 | `./scripts/test-query-integrity.ps1 -Docker` | 单 active Run 唯一索引、消息/RunEvent 增量查询 EXPLAIN、关键索引存在 |
 | Lease | `./scripts/test-lease.ps1` | 停止 Worker 后领取 queued Job，错误 lease 被拒绝 |
 | 事件序号 | `./scripts/test-lease.ps1` | 跳号/乱序被拒绝，重复事件仍幂等 |
 | Health | `./scripts/test-health.ps1` | PostgreSQL 停机 503、恢复 200 |
@@ -46,6 +47,7 @@
 23. Agent owner 被移出 Project 后，即使 `project_agents` 历史映射仍存在，也不能再执行该 Agent。
 24. 非法 `target_agent_id` 格式返回 400 `VALIDATION_FAILED`。
 25. owner/editor 并发向同一 Conversation 发送时，一个请求成功、另一个返回 409 `CONFLICT`。
+26. 消息历史 `limit` 默认/最大边界、`after_seq` 分页、`has_more` 与 `next_after_seq` 通过；非法 limit/after_seq 返回 400。
 
 ## 3. 工具探测与容器入口
 
@@ -87,6 +89,9 @@ active_run_conflict_409: PASS
 removed_agent_owner_denied: PASS
 cancel_and_retry: PASS
 concurrent_send_idempotency: PASS
+message_pagination: PASS
+query_integrity: PASS
+active_run_constraint: PASS
 unknown_fields_and_lengths: PASS
 cancel_then_lease_expiry: PASS
 frontend_retry_refresh_reconnect: PASS

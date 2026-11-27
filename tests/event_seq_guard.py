@@ -37,6 +37,7 @@ def main() -> int:
     sent = send(
         client,
         conversation["id"],
+        agent["id"],
         "event sequence guard",
         f"e2e-event-seq-{uuid.uuid4()}",
     )

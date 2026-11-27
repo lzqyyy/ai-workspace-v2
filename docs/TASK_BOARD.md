@@ -51,6 +51,7 @@
 | D13-20261125 Agent 归属与不可信输入 | CORE/WORKER/QA | DONE | Permission RPC Run 发起者校验、Worker 归属上下文、消息不可信输入边界、跨项目/提示注入专项；Docker 全量 PASS；见 `docs/handoffs/D13-20261125-agent-attribution-untrusted.md` |
 | T0-20261126 实时状态与 gap 恢复 | WEB/QA | DONE | S1+P0+T0：原生 JS 最小 store/reducer、Run/Conversation seq gap 快照恢复、重复事件去重；Docker 全量、前端状态和双浏览器 2H+2A PASS；见 `docs/handoffs/T0-20261126-realtime-state-gap.md` |
 | MVP-CLOSEOUT-20261126 Run Owner 与 retry 目标 | CORE/WEB/QA | DONE | Run 响应增加推导 `agent_owner_id`；新增 GET Run；发送/retry 响应返回真实 `target_agent_id`；前端 retry 使用服务端目标 Agent；Docker 全量 PASS；见 `docs/handoffs/MVP-CLOSEOUT-20261126-run-owner-retry.md` |
+| MVP-CLOSEOUT-20261126 Query Integrity | CORE/WEB/QA | DONE | DB1+PG1+Q1+R1：010 唯一索引、消息分页、RunEvent 上限、查询完整性；Docker 全量/浏览器/health/lease PASS；MVP-45 不纳入本次 P0；见 `docs/handoffs/MVP-CLOSEOUT-20261126-query-integrity.md` |
 
 ## Gate 结果
 

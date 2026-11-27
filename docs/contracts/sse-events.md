@@ -2,7 +2,8 @@
 
 - 状态：FROZEN
 - 所有者：COORD
-- 传输：浏览器 -> C++ `GET /api/v1/runs/{run_id}/events`（Run SSE，envelope 不变）\n- Conversation 发现：浏览器 -> C++ `GET /api/v1/conversations/{conversation_id}/events`
+- 传输：浏览器 -> C++ `GET /api/v1/runs/{run_id}/events`（Run SSE，envelope 不变）
+- Conversation 发现：浏览器 -> C++ `GET /api/v1/conversations/{conversation_id}/events`
 - 重放：`Last-Event-ID` 优先，其次 `after` 查询参数
 - 编码：UTF-8，`text/event-stream`
 
@@ -135,6 +136,7 @@ queued -> running -> succeeded
 - Run 所属 Conversation 的 Project 成员可订阅 Run SSE；viewer 只读。非成员或无角色权限返回 `403 FORBIDDEN`，不返回事件。
 - Run SSE 的 `Last-Event-ID` 缺失时从 `after` 或 0 开始。
 - 服务端每 15 秒发送注释心跳，反向代理不得缓冲 SSE。
+- Run SSE 单次增量查询最多返回 200 条事件，客户端按 `Last-Event-ID`/`after` 继续读取。
 - 事件先落库后推送；不从 Worker 直达浏览器。
 - 所有 Project 成员读取同一 Run 的事件序列；Run SSE URL、envelope 和状态机不变。
 - payload 不记录 API Key、Authorization 头或完整敏感提示词到普通日志。

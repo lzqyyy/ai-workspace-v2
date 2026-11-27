@@ -33,14 +33,18 @@ function Assert-Schema {
     $initiatedMigration = Query-Scalar "SELECT count(*) FROM schema_migrations WHERE version='008_run_initiated_by';"
     $conversationEventsTable = Query-Scalar "SELECT count(*) FROM information_schema.tables WHERE table_name='conversation_events';"
     $conversationEventsMigration = Query-Scalar "SELECT count(*) FROM schema_migrations WHERE version='009_conversation_events';"
-    if ([int]$migrations -lt 9) { throw "expected at least 9 migrations, got $migrations" }
+    $singleActiveMigration = Query-Scalar "SELECT count(*) FROM schema_migrations WHERE version='010_single_active_run';"
+    $activeRunIndex = Query-Scalar "SELECT count(*) FROM pg_indexes WHERE indexname='ux_runs_one_active_per_conversation' AND indexdef LIKE '%UNIQUE INDEX%' AND indexdef LIKE '%status%';"
+    if ([int]$migrations -lt 10) { throw "expected at least 10 migrations, got $migrations" }
     if ($projectMigration -ne '1') { throw "007_project_id_required must appear exactly once, got $projectMigration" }
     if ($initiatedNullable -ne 'NO') { throw "runs.initiated_by_user_id must be NOT NULL, got $initiatedNullable" }
     if ($initiatedNullRows -ne '0') { throw "runs.initiated_by_user_id contains $initiatedNullRows NULL rows" }
     if ($initiatedMigration -ne '1') { throw "008_run_initiated_by must appear exactly once, got $initiatedMigration" }
     if ($conversationEventsTable -ne '1') { throw "conversation_events table is missing" }
     if ($conversationEventsMigration -ne '1') { throw "009_conversation_events must appear exactly once, got $conversationEventsMigration" }
-    return [ordered]@{migrations=[int]$migrations; project_id_nullable=$nullable; null_rows=[int]$nullRows; migration_007=$projectMigration; initiated_by_nullable=$initiatedNullable; initiated_by_null_rows=[int]$initiatedNullRows; migration_008=$initiatedMigration; conversation_events_table=[int]$conversationEventsTable; migration_009=$conversationEventsMigration}
+    if ($singleActiveMigration -ne '1') { throw "010_single_active_run must appear exactly once, got $singleActiveMigration" }
+    if ($activeRunIndex -ne '1') { throw "ux_runs_one_active_per_conversation is missing" }
+    return [ordered]@{migrations=[int]$migrations; project_id_nullable=$nullable; null_rows=[int]$nullRows; migration_007=$projectMigration; initiated_by_nullable=$initiatedNullable; initiated_by_null_rows=[int]$initiatedNullRows; migration_008=$initiatedMigration; conversation_events_table=[int]$conversationEventsTable; migration_009=$conversationEventsMigration; migration_010=$singleActiveMigration; active_run_index=[int]$activeRunIndex}
 }
 
 Push-Location $root

@@ -29,7 +29,7 @@ def main() -> int:
         "/api/v1/conversations",
         {"agent_id": agent["id"], "title": "Cancel lease expiry"},
     )
-    sent = send(client, conversation["id"], "取消后租约过期必须保持 cancelled", f"e2e-cancel-lease-{uuid.uuid4()}")
+    sent = send(client, conversation["id"], agent["id"], "取消后租约过期必须保持 cancelled", f"e2e-cancel-lease-{uuid.uuid4()}")
     claim = helper("claim")
     assert claim["run_id"] == sent["run_id"], (claim, sent)
 

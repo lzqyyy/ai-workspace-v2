@@ -6,7 +6,7 @@ def main():
     client=Client();login(client,origin='http://localhost:8080')
     agent=client.request('POST','/api/v1/agents',{'name':f'Lease Guard {uuid.uuid4().hex[:6]}','system_prompt':'Lease guard test.'})
     conversation=client.request('POST','/api/v1/conversations',{'agent_id':agent['id'],'title':'Lease guard'})
-    sent=send(client,conversation['id'],'lease rejection test',f'e2e-lease-{uuid.uuid4()}')
+    sent=send(client,conversation['id'],agent['id'],'lease rejection test',f'e2e-lease-{uuid.uuid4()}')
     assert sent['status']=='queued',sent
     result=callback_helper(mode='reject')
     assert result and result[0]['code']=='JOB_LEASE_INVALID',result

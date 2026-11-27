@@ -1,7 +1,7 @@
 # ADR-0005：Run 归属、发送幂等与并发控制
 
 - 状态：Accepted
-- 日期：2026-11-19
+- 日期：2026-11-19；增量确认：2026-11-26
 - 决策者：产品负责人、CORE/COORD
 - 依据：`多人平台的最小mvp_PRD.md` v1.1-frozen、`ADR-0004-project-membership.md`
 
@@ -39,7 +39,7 @@
 采用 `5A`：继续使用 Project + Conversation 悲观行锁，检查 active Run 并返回 409。当前接受同一 Project 写路径串行化的吞吐上限。
 
 - `5B` 登记为后续任务 `L2-08`：Conversation 级锁 + membership/Agent 授权行共享锁。
-- `5C` 的 partial unique index 暂不作为主方案；未来可作为 5A/5B 的数据库兜底，但必须捕获并映射唯一冲突为 409。
+- 2026-11-26 增量确认：`5A` 继续作为主方案；`010_single_active_run.sql` 增加 `5C` partial unique index 作为数据库兜底，并把唯一冲突映射为 409。
 
 ### 6. 审计
 
@@ -52,5 +52,5 @@
 ## 影响
 
 - REST 契约版本升级为 `1.0.1`，URL、端口、SSE envelope 和 Run 状态机不变。
-- 数据库从迁移 `007` 增至 `008`。
+- 数据库从迁移 `007` 增至 `008`；2026-11-26 再增至 `010_single_active_run`。
 - 新增/修改的测试必须覆盖：`client_request_id` 缺失、header/body 不一致、不同用户同 key、owner retry editor Run 后的归属、2H+2A 与迁移重放。

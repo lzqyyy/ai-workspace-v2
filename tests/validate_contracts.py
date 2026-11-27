@@ -16,6 +16,7 @@ MULTIPLAYER_MIGRATION = MIGRATIONS_DIR / "006_multiplayer_foundation.sql"
 PROJECT_REQUIRED_MIGRATION = MIGRATIONS_DIR / "007_conversation_project_required.sql"
 INITIATED_MIGRATION = MIGRATIONS_DIR / "008_run_initiated_by.sql"
 CONVERSATION_EVENTS_MIGRATION = MIGRATIONS_DIR / "009_conversation_events.sql"
+SINGLE_ACTIVE_MIGRATION = MIGRATIONS_DIR / "010_single_active_run.sql"
 
 EXPECTED_PATHS = {
     ("/api/v1/auth/login", "post"),
@@ -66,7 +67,7 @@ EXPECTED_CONVERSATION_EVENTS = {"run.available"}
 def main() -> int:
     api = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
     assert api["openapi"] == "3.1.0"
-    assert api["info"]["version"] == "1.3.0"
+    assert api["info"]["version"] == "1.4.0"
 
     operations = {
         (path, method)
@@ -126,6 +127,12 @@ def main() -> int:
     assert agent_schema.get("additionalProperties") is False, "CreateAgentRequest must reject unknown fields"
     assert agent_schema["properties"]["avatar"]["maxLength"] == 500000, "avatar maxLength mismatch"
 
+    message_get = api["paths"]["/api/v1/conversations/{conversation_id}/messages"]["get"]
+    message_parameters = {item.get("name"): item for item in message_get.get("parameters", [])}
+    assert message_parameters["limit"]["schema"]["default"] == 100, "message limit default must be 100"
+    assert message_parameters["limit"]["schema"]["maximum"] == 200, "message limit maximum must be 200"
+    message_response = message_get["responses"]["200"]["content"]["application/json"]["schema"]
+    assert {"items", "has_more", "next_after_seq"} <= set(message_response.get("required", []))
     send_schema = api["paths"]["/api/v1/conversations/{conversation_id}/messages"]["post"]["requestBody"]["content"]["application/json"]["schema"]
     assert "target_agent_id" in send_schema.get("required", []), "send message must require target_agent_id"
     assert "client_request_id" in send_schema.get("required", []), "send message must require client_request_id"
@@ -190,6 +197,7 @@ def main() -> int:
     assert PROJECT_REQUIRED_MIGRATION in migrations, "conversation project_id NOT NULL migration missing"
     assert INITIATED_MIGRATION in migrations, "Run initiated_by_user_id migration missing"
     assert CONVERSATION_EVENTS_MIGRATION in migrations, "Conversation events migration missing"
+    assert SINGLE_ACTIVE_MIGRATION in migrations, "single active Run migration missing"
     migration_text = MULTIPLAYER_MIGRATION.read_text(encoding="utf-8")
     for table in ("projects", "project_members", "project_agents"):
         assert f"CREATE TABLE IF NOT EXISTS {table}" in migration_text, f"missing migration table: {table}"
@@ -229,6 +237,10 @@ def main() -> int:
     conversation_events_version = re.search(r"schema_migrations\(version\) VALUES \('([^']+)'\)", conversation_events_migration)
     assert conversation_events_version and len(conversation_events_version.group(1)) <= 32
 
+    single_active_migration = SINGLE_ACTIVE_MIGRATION.read_text(encoding="utf-8")
+    normalized_single_active = " ".join(single_active_migration.split())
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS ux_runs_one_active_per_conversation" in normalized_single_active
+    assert "WHERE status IN ('queued', 'running')" in normalized_single_active
     text_corpus = "\n".join(p.read_text(encoding="utf-8") for p in [OPENAPI, PROTO, SSE, ERRORS])
     assert "sk-" not in text_corpus, "possible API key entered the contract tree"
     print("contract validation: PASS")

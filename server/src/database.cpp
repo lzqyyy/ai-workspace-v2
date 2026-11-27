@@ -196,6 +196,12 @@ PgResult PgSession::query(const std::string& sql, const std::vector<std::optiona
                                  values.data(), nullptr, nullptr, 0));
     if (!result.ok()) {
         reusable_ = false;
+        const char* sqlstate = PQresultErrorField(result.raw(), PG_DIAG_SQLSTATE);
+        const char* constraint = PQresultErrorField(result.raw(), PG_DIAG_CONSTRAINT_NAME);
+        if (sqlstate && std::strcmp(sqlstate, "23505") == 0 && constraint &&
+            std::strcmp(constraint, "ux_runs_one_active_per_conversation") == 0) {
+            throw ServiceError(409, "CONFLICT", "conversation already has an active run");
+        }
         throw ServiceError(500, "INTERNAL", "database query failed", true);
     }
     return result;
